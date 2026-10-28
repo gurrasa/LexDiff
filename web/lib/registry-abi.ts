@@ -92,7 +92,7 @@ export const registryAbi = [
       {
         "name": "decision",
         "type": "uint8",
-        "internalType": "enum LexDiffRegistry.DecisionType"
+        "internalType": "enum ILexDiff.DecisionType"
       },
       {
         "name": "evidenceHash",
@@ -181,7 +181,7 @@ export const registryAbi = [
       {
         "name": "",
         "type": "tuple",
-        "internalType": "struct LexDiffRegistry.Agreement",
+        "internalType": "struct ILexDiff.Agreement",
         "components": [
           {
             "name": "client",
@@ -221,7 +221,7 @@ export const registryAbi = [
           {
             "name": "verifier",
             "type": "tuple",
-            "internalType": "struct LexDiffRegistry.Verifier",
+            "internalType": "struct ILexDiff.Verifier",
             "components": [
               {
                 "name": "forwarder",
@@ -274,7 +274,7 @@ export const registryAbi = [
       {
         "name": "",
         "type": "tuple[]",
-        "internalType": "struct LexDiffRegistry.Check[]",
+        "internalType": "struct ILexDiff.Check[]",
         "components": [
           {
             "name": "target",
@@ -364,12 +364,12 @@ export const registryAbi = [
       {
         "name": "",
         "type": "tuple[]",
-        "internalType": "struct LexDiffRegistry.Decision[]",
+        "internalType": "struct ILexDiff.Decision[]",
         "components": [
           {
             "name": "decision",
             "type": "uint8",
-            "internalType": "enum LexDiffRegistry.DecisionType"
+            "internalType": "enum ILexDiff.DecisionType"
           },
           {
             "name": "signer",
@@ -425,7 +425,7 @@ export const registryAbi = [
       {
         "name": "",
         "type": "tuple",
-        "internalType": "struct LexDiffRegistry.Finding",
+        "internalType": "struct ILexDiff.Finding",
         "components": [
           {
             "name": "key",
@@ -435,12 +435,12 @@ export const registryAbi = [
           {
             "name": "kind",
             "type": "uint8",
-            "internalType": "enum LexDiffRegistry.Kind"
+            "internalType": "enum ILexDiff.Kind"
           },
           {
             "name": "status",
             "type": "uint8",
-            "internalType": "enum LexDiffRegistry.Status"
+            "internalType": "enum ILexDiff.Status"
           },
           {
             "name": "detailsHash",
@@ -525,7 +525,7 @@ export const registryAbi = [
       {
         "name": "out",
         "type": "tuple[]",
-        "internalType": "struct LexDiffRegistry.Finding[]",
+        "internalType": "struct ILexDiff.Finding[]",
         "components": [
           {
             "name": "key",
@@ -535,12 +535,12 @@ export const registryAbi = [
           {
             "name": "kind",
             "type": "uint8",
-            "internalType": "enum LexDiffRegistry.Kind"
+            "internalType": "enum ILexDiff.Kind"
           },
           {
             "name": "status",
             "type": "uint8",
-            "internalType": "enum LexDiffRegistry.Status"
+            "internalType": "enum ILexDiff.Status"
           },
           {
             "name": "detailsHash",
@@ -654,7 +654,7 @@ export const registryAbi = [
       {
         "name": "r",
         "type": "tuple",
-        "internalType": "struct LexDiffRegistry.Registration",
+        "internalType": "struct ILexDiff.Registration",
         "components": [
           {
             "name": "client",
@@ -689,7 +689,7 @@ export const registryAbi = [
           {
             "name": "verifier",
             "type": "tuple",
-            "internalType": "struct LexDiffRegistry.Verifier",
+            "internalType": "struct ILexDiff.Verifier",
             "components": [
               {
                 "name": "forwarder",
@@ -747,7 +747,7 @@ export const registryAbi = [
       {
         "name": "r",
         "type": "tuple",
-        "internalType": "struct LexDiffRegistry.Registration",
+        "internalType": "struct ILexDiff.Registration",
         "components": [
           {
             "name": "client",
@@ -782,7 +782,7 @@ export const registryAbi = [
           {
             "name": "verifier",
             "type": "tuple",
-            "internalType": "struct LexDiffRegistry.Verifier",
+            "internalType": "struct ILexDiff.Verifier",
             "components": [
               {
                 "name": "forwarder",
@@ -872,7 +872,7 @@ export const registryAbi = [
       {
         "name": "decision",
         "type": "uint8",
-        "internalType": "enum LexDiffRegistry.DecisionType"
+        "internalType": "enum ILexDiff.DecisionType"
       },
       {
         "name": "evidenceHash",
@@ -1097,7 +1097,7 @@ export const registryAbi = [
         "name": "decision",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum LexDiffRegistry.DecisionType"
+        "internalType": "enum ILexDiff.DecisionType"
       },
       {
         "name": "signer",
@@ -1109,7 +1109,7 @@ export const registryAbi = [
         "name": "status",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum LexDiffRegistry.Status"
+        "internalType": "enum ILexDiff.Status"
       },
       {
         "name": "noteHash",
@@ -1146,7 +1146,7 @@ export const registryAbi = [
         "name": "kind",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum LexDiffRegistry.Kind"
+        "internalType": "enum ILexDiff.Kind"
       },
       {
         "name": "evidenceHash",
@@ -1253,12 +1253,12 @@ export const registryAbi = [
       {
         "name": "status",
         "type": "uint8",
-        "internalType": "enum LexDiffRegistry.Status"
+        "internalType": "enum ILexDiff.Status"
       },
       {
         "name": "decision",
         "type": "uint8",
-        "internalType": "enum LexDiffRegistry.DecisionType"
+        "internalType": "enum ILexDiff.DecisionType"
       }
     ]
   },
@@ -1419,7 +1419,7 @@ export const registryAbi = [
       {
         "name": "decision",
         "type": "uint8",
-        "internalType": "enum LexDiffRegistry.DecisionType"
+        "internalType": "enum ILexDiff.DecisionType"
       }
     ]
   },

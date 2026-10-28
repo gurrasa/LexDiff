@@ -2,10 +2,11 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { type Agreement, type Finding, getEvidence, REGISTRY_ADDRESS, registry, shortAddr } from '@/lib/registry'
+import { STEPS, stageOf } from '@/lib/plain'
+import { type Agreement, type Check, type Finding, getEvidence, REGISTRY_ADDRESS, registry, shortAddr } from '@/lib/registry'
 import type { EscrowTerms } from '@/lib/terms'
 
-type Row = { id: bigint; agreement: Agreement; title: string; findings: Finding[] }
+type Row = { id: bigint; agreement: Agreement; terms: EscrowTerms | null; findings: Finding[]; checks: Check[] }
 
 export default function Home() {
   const [rows, setRows] = useState<Row[] | null>(null)
@@ -20,8 +21,12 @@ export default function Home() {
         await Promise.all(
           ids.map(async (id) => {
             const agreement = await registry.getAgreement(id)
-            const terms = await getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI)
-            return { id, agreement, title: terms?.title ?? 'Terms unavailable', findings: await registry.getFindings(id) }
+            const [terms, findings, checks] = await Promise.all([
+              getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI),
+              registry.getFindings(id),
+              registry.getChecks(id),
+            ])
+            return { id, agreement, terms, findings, checks }
           }),
         ),
       )
@@ -30,69 +35,91 @@ export default function Home() {
 
   return (
     <>
-      <section style={{ margin: '1.5rem 0 2rem' }}>
-        <h1>Does the code do what the parties signed?</h1>
+      <section className="hero">
+        <h1>Does the smart contract do what the parties signed?</h1>
         <p className="lede">
-          LexDiff compares a legal agreement with the smart contract that enforces it, records every mismatch on-chain,
-          and tracks who is responsible for each one until a Chainlink CRE check confirms it is resolved.
+          More and more agreements are enforced by code, and more and more of that code is written by AI. LexDiff checks the code against the
+          agreement, and keeps a signed record of who knew about each problem, who accepted it, and whether it was really fixed.
         </p>
-        <div className="row small muted">
-          <span className="badge tone-ok">✅ Match</span>
-          <span className="badge tone-warn">⚠️ Mismatch</span>
-          <span className="badge tone-bad">❌ Missing</span>
-          <span className="badge tone-bad">🚩 Hidden power</span>
+        <div className="row" style={{ marginTop: '1rem' }}>
+          <Link href="/new" className="button">Try it with the demo agreement</Link>
+          <a href="#how" className="button ghost">How it works</a>
         </div>
       </section>
 
+      <div className="story">
+        <div className="panel">
+          <h3>📄 The agreement says</h3>
+          <p>The client deposits 1,000 USDC. The freelancer delivers within <b>30 days</b>. If not, the client gets a <b>refund</b>. Nobody may withdraw the money.</p>
+        </div>
+        <div className="panel">
+          <h3>💻 The code does</h3>
+          <p>⚠️ The deadline is <b>3 days</b>.<br />❌ There is <b>no refund</b>.<br />🚩 The owner can <b>withdraw everything</b>.</p>
+        </div>
+        <div className="panel">
+          <h3>🔎 LexDiff records</h3>
+          <p>Chainlink finds all three. The lawyer has the developer fix two; the client knowingly accepts one. Chainlink confirms the fix. Everything is signed.</p>
+        </div>
+      </div>
+
       {!REGISTRY_ADDRESS && (
         <p className="notice">
-          Set <code>NEXT_PUBLIC_REGISTRY_ADDRESS</code> in <code>web/.env.local</code> to the deployed LexDiffRegistry.
+          Set <code>NEXT_PUBLIC_REGISTRY_ADDRESS</code> in <code>web/.env.local</code> to the deployed LexDiffRegistry to see agreements.
         </p>
       )}
       {error && <p className="error">{error}</p>}
 
-      <div className="row spread">
-        <h2 style={{ margin: 0 }}>Agreements</h2>
-        <Link href="/new" className="button">Register an agreement</Link>
-      </div>
+      {REGISTRY_ADDRESS && (
+        <>
+          <h2>Agreements</h2>
+          <div className="stack">
+            {rows === null && !error && <p className="muted">Loading from Sepolia…</p>}
+            {rows?.length === 0 && <p className="muted">No agreements yet. <Link href="/new">Register the first one.</Link></p>}
+            {rows?.map(({ id, agreement, terms, findings, checks }) => {
+              const stage = stageOf(agreement, findings, checks)
+              return (
+                <Link key={id.toString()} href={`/agreements/${id}`} className="panel row spread" style={{ color: 'inherit' }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>{terms?.title ?? `Agreement #${id}`}</h3>
+                    <span className="small muted">
+                      #{id.toString()} · contract {shortAddr(agreement.target)}
+                      {agreement.supersededBy > BigInt(0) && ` · amended by #${agreement.supersededBy}`}
+                    </span>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span className={`badge ${stage.waitingFor === null ? 'tone-ok' : 'tone-info'}`}>
+                      {STEPS[stage.step]}
+                    </span>
+                    <div className="small muted">{stage.title}</div>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </>
+      )}
 
-      <div className="stack" style={{ marginTop: '1rem' }}>
-        {rows === null && REGISTRY_ADDRESS && !error && <p className="muted">Loading from Sepolia…</p>}
-        {rows?.length === 0 && <p className="muted">No agreements yet.</p>}
-        {rows?.map(({ id, agreement, title, findings }) => {
-          const open = findings.filter((f) => f.status === 1 || f.status === 3).length
-          const accepted = findings.filter((f) => f.status === 2).length
-          const resolved = findings.filter((f) => f.status === 4).length
-          return (
-            <Link key={id.toString()} href={`/agreements/${id}`} className="panel row spread" style={{ color: 'inherit' }}>
-              <div>
-                <h3 style={{ margin: 0 }}>#{id.toString()} · {title}</h3>
-                <span className="small muted mono">contract {shortAddr(agreement.target)}</span>
-              </div>
-              <div className="row">
-                {agreement.supersededBy > BigInt(0) && <span className="badge tone-muted">amended by #{agreement.supersededBy.toString()}</span>}
-                {findings.length === 0 && <span className="badge tone-muted">Awaiting CRE check</span>}
-                {open > 0 && <span className="badge tone-bad">{open} open</span>}
-                {accepted > 0 && <span className="badge tone-warn">{accepted} accepted risk</span>}
-                {resolved > 0 && <span className="badge tone-ok">{resolved} resolved</span>}
-              </div>
-            </Link>
-          )
-        })}
-      </div>
-
-      <h2>Six questions, each with a signed or verified answer</h2>
+      <h2 id="how">How it works</h2>
       <ol className="steps">
-        <li><b>What was agreed?</b> Claude drafts the terms with verbatim quotes. The reviewer and the client sign the reviewed terms, the roles and the verifier.</li>
-        <li><b>Does the code match?</b> A Chainlink CRE workflow compares the terms with the verified source and on-chain state, deterministically.</li>
-        <li><b>Who knew?</b> Findings are anchored on-chain by hash; parties sign <i>Acknowledge</i> on the exact evidence they saw.</li>
-        <li><b>Who took the risk, and who fixes?</b> The client signs <i>Accepted risk</i>; the reviewer signs <i>Remediation required</i> for the developer.</li>
-        <li><b>Is it fixed?</b> Only a report from the agreement&apos;s own verifier can mark a finding Resolved.</li>
-        <li><b>Who disputes?</b> Any party can sign <i>Dispute</i>. History is never rewritten; amendments become new agreements.</li>
+        <li><b>Agreement signed.</b> Claude reads the agreement and picks out the terms, quoting where each one comes from. The lawyer checks them, and the lawyer and client sign.</li>
+        <li><b>Code checked.</b> Chainlink, which no party controls, reads the smart contract on the blockchain and compares it with the signed terms.</li>
+        <li><b>Decisions.</b> For each problem the lawyer can require a fix, or the client can knowingly accept the risk. Anyone involved can confirm they saw it, or disagree.</li>
+        <li><b>Fix.</b> The developer deploys a corrected contract; the client, who holds the money, approves the switch.</li>
+        <li><b>Re-check.</b> Chainlink checks again. Only Chainlink can mark a problem as fixed; saying so is not enough.</li>
+        <li><b>Ready.</b> Every problem is fixed or knowingly accepted, with a signed record if anything is disputed later.</li>
       </ol>
-      <p className="small muted">
-        Only hashes are stored on-chain. Terms, reports and notes live in the evidence store and are checked against those hashes.
-        A wallet signature proves control of a key, not legal identity or binding consent.
+
+      <h2>Who is involved</h2>
+      <div className="grid four">
+        <div className="panel"><h3>Client</h3><p className="small">Pays into the escrow. Can accept a risk knowingly, and approves any replacement contract.</p></div>
+        <div className="panel"><h3>Lawyer</h3><p className="small">Approves what Claude extracted. Can require the developer to fix a problem.</p></div>
+        <div className="panel"><h3>Developer</h3><p className="small">Wrote the smart contract. Fixes problems and proposes the corrected version.</p></div>
+        <div className="panel"><h3>Chainlink</h3><p className="small">Independent checker. The only one that can confirm a fix.</p></div>
+      </div>
+
+      <p className="small muted" style={{ marginTop: '2rem' }}>
+        LexDiff keeps evidence; it does not decide who is liable. A wallet signature proves control of a key, not someone&apos;s legal identity.
+        Only fingerprints (hashes) are stored on the blockchain; the terms and notes stay off-chain.
       </p>
     </>
   )

@@ -22,7 +22,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
           </Link>
           <nav>
             <Link href="/">Agreements</Link>
-            <Link href="/new" className="button small">New agreement</Link>
+            <Link href="/new" className="button small">Check an agreement</Link>
           </nav>
         </header>
         <main>{children}</main>

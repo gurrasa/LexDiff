@@ -12,6 +12,7 @@ import {
 	type HTTPSendRequester,
 	handler,
 	LAST_FINALIZED_BLOCK_NUMBER,
+	LATEST_BLOCK_NUMBER,
 	logTriggerConfig,
 	ok,
 	prepareReportRequest,
@@ -47,6 +48,9 @@ const configSchema = z.object({
 	etherscanChainId: z.string(),
 	evidenceStoreUrl: z.string(),
 	gasLimit: z.string(),
+	// Sepolia finality lags ~15 minutes. "latest" lets the demo check a contract right after it was
+	// registered or replaced; production workflows should read "finalized" state.
+	readFinalized: z.boolean(),
 })
 
 type Config = z.infer<typeof configSchema>
@@ -103,11 +107,14 @@ const storeReport = (requester: HTTPSendRequester, url: string, canonical: strin
 // On-chain reads
 // ---------------------------------------------------------------------------
 
+const blockFor = (runtime: Runtime<Config>) =>
+	runtime.config.readFinalized ? LAST_FINALIZED_BLOCK_NUMBER : LATEST_BLOCK_NUMBER
+
 const callView = (runtime: Runtime<Config>, evm: EVMClient, to: string, abi: Abi, functionName: string) => {
 	const reply = evm
 		.callContract(runtime, {
 			call: encodeCallMsg({ from: zeroAddress, to: to as Address, data: encodeFunctionData({ abi, functionName }) }),
-			blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+			blockNumber: blockFor(runtime),
 		})
 		.result()
 	return decodeFunctionResult({ abi, functionName, data: bytesToHex(reply.data) })
@@ -226,7 +233,7 @@ const readAgreement = (runtime: Runtime<Config>, evm: EVMClient, agreementId: bi
 				to: runtime.config.registryAddress as Address,
 				data: encodeFunctionData({ abi: REGISTRY_ABI, functionName: 'getAgreement', args: [agreementId] }),
 			}),
-			blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+			blockNumber: blockFor(runtime),
 		})
 		.result()
 	return decodeFunctionResult({ abi: REGISTRY_ABI, functionName: 'getAgreement', data: bytesToHex(reply.data) })

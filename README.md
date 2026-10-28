@@ -70,7 +70,7 @@ flowchart LR
 
 | Path | What it is |
 |---|---|
-| [contracts/src/LexDiffRegistry.sol](contracts/src/LexDiffRegistry.sol) | Evidence ledger: agreements, CRE checks, findings, signed decisions. Implements the CRE `IReceiver`. |
+| [contracts/src/LexDiffRegistry.sol](contracts/src/LexDiffRegistry.sol) | Evidence ledger: agreements, CRE checks, findings, signed decisions. Implements the CRE `IReceiver`. Report and decision logic live in [LexDiffLogic.sol](contracts/src/LexDiffLogic.sol); shared types in [ILexDiff.sol](contracts/src/ILexDiff.sol). |
 | [contracts/src/demo/](contracts/src/demo/) | `FreelanceEscrowV1` (flawed, "AI-generated"), `FreelanceEscrowV2` (remediated), `MockUSDC`. |
 | [cre/lexdiff-workflow/](cre/lexdiff-workflow/) | The CRE workflow (TypeScript SDK). `compare.ts`, `source-analysis.ts` and `report.ts` are pure and unit-tested. |
 | [web/](web/) | Next.js app: Claude extraction, signing, evidence store (`/api/evidence`), findings dashboard. |
@@ -115,11 +115,13 @@ cd contracts
 cp .env.example .env   # PRIVATE_KEY, SEPOLIA_RPC_URL, ETHERSCAN_API_KEY
 source .env
 forge test
-forge script script/Deploy.s.sol --rpc-url sepolia --broadcast --verify
+./script/deploy-sepolia.sh
 cat deployments/11155111.json
 ```
 
-Escrows must be **verified on Etherscan** (`--verify` does this), because the workflow reads their source.
+Escrows must be **verified on Etherscan** (the script does this), because the workflow reads their source.
+
+Why a shell script instead of `forge script`: Sepolia now charges far more gas per byte of deployed code than Foundry's local EVM assumes, so `forge script` estimates fail on-chain. The script uses `cast send`, which asks the Sepolia node for the real estimate. For the same reason the registry's report and decision logic lives in a separately deployed library (`LexDiffLogic`): as one contract it would exceed the 16.7M gas-per-transaction cap (EIP-7825).
 
 ### 2. Web app
 
@@ -154,15 +156,21 @@ cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \
 
 Keep the web app running: CRE fetches the terms from it and posts the report document to its evidence store.
 
+**Running the check from the browser (local demo):** set `ENABLE_LOCAL_CRE=true` in `web/.env.local`. The agreement page then shows a **Run the Chainlink check** button that runs the same `cre workflow simulate` command and streams its log. Never enable this on a hosted deployment.
+
+`readFinalized` in `config.staging.json` is `false` for the demo: Sepolia finality lags about 15 minutes, so reading finalized state would miss a contract that was just registered or replaced. Production workflows should set it to `true`.
+
 Trigger index `0` is the HTTP trigger; `1` is the EVM log trigger on `CheckRequested` (use `--evm-tx-hash <tx> --evm-event-index <n>`).
 
 ### 4. Finish the demo
 
-1. Refresh the agreement page: findings appear with status **Open**, details verified against their on-chain hashes.
-2. As reviewer: *Require remediation* on the deadline and refund. As developer: *Acknowledge*.
-3. As client: *Accept risk* on the hidden power.
-4. As developer: *Propose redeployed contract* → `escrowV2`. As client: *Accept*.
-5. Run the simulate command again. The deadline and refund show **Resolved**.
+The agreement page shows where you are (*Agreement signed → Code checked → Decisions → Fix → Re-check → Ready*) and who has to act next. With one wallet holding every role, use **Act as** to switch between client, reviewer and developer.
+
+1. **Run the Chainlink check.** Three issues appear, each in plain language ("The agreement says 30 days / The code does 3 days").
+2. As reviewer: *Developer must fix this* on the deadline and refund. As developer: *I have seen this*.
+3. As client: *I accept this risk* on the hidden power.
+4. As developer: propose the corrected contract (`escrowV2` is prefilled). As client: approve it.
+5. **Run the Chainlink check** again. The deadline and refund show **Fixed: confirmed by Chainlink**.
 
 ## Tests
 

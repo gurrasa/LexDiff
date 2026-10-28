@@ -188,6 +188,8 @@ For the full Sepolia + CRE flow, see *Running it* in [README.md](README.md).
 
 ## 10. Gotchas we've already hit
 
+- **Deploy with `./script/deploy-sepolia.sh`, not `forge script`.** Sepolia charges much more gas per byte of contract code than Foundry assumes, so `forge script` deploys run out of gas. The script asks the node for the real estimate. That is also why the registry is split into `LexDiffRegistry` + the `LexDiffLogic` library: as one contract it exceeded the 16.7M gas-per-transaction cap.
+- **`PRIVATE_KEY` in `contracts/.env` needs `0x`; `CRE_ETH_PRIVATE_KEY` in `cre/.env` must not have it.**
 - **Never put keys in `.env.example`.** That file is committed and the repo is public. Keys go in `web/.env.local`, `cre/.env` and `contracts/.env`, which are all git-ignored.
 - **Run `npm run dev` in `web/`**, not in `cre/lexdiff-workflow/`.
 - **When you change the contract:**
@@ -198,6 +200,8 @@ For the full Sepolia + CRE flow, see *Running it* in [README.md](README.md).
 - **The terms schema exists in two places:** `web/lib/terms.ts` and `cre/lexdiff-workflow/terms.ts`. Keep them identical, or the hashes won't match.
 - **`npm audit` reports 5 vulnerabilities in the workflow.** Don't run `npm audit fix --force`: it upgrades packages the CRE SDK is pinned to. The warnings don't affect the demo.
 - **CRE needs the web app running.** It fetches the terms and stores its report through `localhost:3000/api/evidence`.
+- **The "Run the Chainlink check" button** only works with `ENABLE_LOCAL_CRE=true` in `web/.env.local` and the CRE CLI on your PATH. It is for local demos only.
+- **The workflow reads the latest block, not the finalized one** (`readFinalized: false`). Sepolia finality lags ~15 minutes, and reading finalized state made fresh registrations invisible to CRE.
 - **The simulation forwarder is a mock** and doesn't verify signatures. We say so openly in the README and the pitch.
 
 ## 11. How we work

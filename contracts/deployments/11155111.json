@@ -1,0 +1,11 @@
+{
+  "chainId": 11155111,
+  "deployBlock": 12015707,
+  "registry": "0xbd1472dad8e08c2f66e3f5bb3876eb9f0c8085e9",
+  "logic": "0xf498e0e9ee6875966e0589333c9014fc3113679f",
+  "usdc": "0xe45c6148e724976ee3448bace05b054175b04e1f",
+  "escrowV1": "0x2431a24e3d7c3e2f254b8fa9891ee9cb388359f3",
+  "escrowV2": "0x81b40e9b29a3f4f268279b454de319beef781e95",
+  "client": "0x04b986349d0aDC3123eE9df037409106D134c198",
+  "freelancer": "0x04b986349d0aDC3123eE9df037409106D134c198"
+}

@@ -131,3 +131,47 @@ th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; colo
 }
 details summary { cursor: pointer; color: var(--accent); font-size: 0.85rem; }
 pre { background: var(--bg); border: 1px solid var(--line); padding: 0.75rem; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; }
+
+/* --- Journey stepper ---------------------------------------------------- */
+.stepper { display: flex; gap: 0.25rem; list-style: none; padding: 0; margin: 1rem 0; overflow-x: auto; }
+.stepper li {
+  flex: 1; min-width: 92px; text-align: center; font-size: 0.78rem; color: var(--muted);
+  padding: 0.5rem 0.25rem 0; border-top: 4px solid var(--line); font-weight: 600;
+}
+.stepper li.done { border-color: var(--ok); color: var(--ok); }
+.stepper li.now { border-color: var(--accent); color: var(--accent); }
+
+/* --- "What happens now" ------------------------------------------------- */
+.next {
+  border: 2px solid var(--accent); background: var(--info-bg); border-radius: var(--radius);
+  padding: 1rem 1.25rem; display: grid; gap: 0.5rem;
+}
+.next.done { border-color: var(--ok); background: var(--ok-bg); }
+.next h2 { margin: 0; font-size: 1.25rem; }
+.next .who { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
+.next.done .who { color: var(--ok); }
+
+/* --- Role switcher ------------------------------------------------------ */
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--panel); gap: 2px; }
+.segmented button { background: transparent; color: var(--muted); border: 0; border-radius: 999px; padding: 0.3rem 0.85rem; font-size: 0.85rem; }
+.segmented button.on { background: var(--accent); color: var(--accent-ink); }
+
+/* --- Finding cards ------------------------------------------------------ */
+.finding { background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: var(--radius); padding: 1rem 1.25rem; }
+.finding.tone-bad { border-left-color: var(--bad); color: inherit; background: var(--panel); }
+.finding.tone-warn { border-left-color: var(--warn); color: inherit; background: var(--panel); }
+.finding.tone-ok { border-left-color: var(--ok); color: inherit; background: var(--panel); }
+.finding .says { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin: 0.75rem 0; }
+.finding .says div { background: var(--bg); border-radius: 8px; padding: 0.6rem 0.75rem; }
+.finding .says span { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.finding .actions { display: grid; gap: 0.5rem; margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--line); }
+.evidence { font-size: 0.78rem; color: var(--muted); word-break: break-all; }
+
+/* --- Log / misc --------------------------------------------------------- */
+.log { max-height: 320px; overflow: auto; white-space: pre-wrap; font-size: 0.75rem; }
+.story { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.story .panel h3 { display: flex; gap: 0.5rem; align-items: center; }
+.hero { padding: 2rem 0 1rem; }
+.hero h1 { font-size: 2.4rem; max-width: 22ch; }
+.toggle { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; color: var(--muted); cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 500; margin: 0; }
+.toggle input { width: auto; }
