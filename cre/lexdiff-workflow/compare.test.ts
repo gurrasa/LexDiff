@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { compare, findingKey, Kind, resolveGetters } from './compare.ts'
+import { compare, detailsHash, findingKey, Kind, resolveGetters } from './compare.ts'
+import { buildReport } from './report.ts'
 import { analyzeSource, privilegedFunctions, stripComments } from './source-analysis.ts'
 import { canonicalize, escrowTermsSchema, termsHash } from './terms.ts'
 
@@ -124,4 +125,18 @@ test('terms hash ignores key order and whitespace', () => {
 	const reordered = JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(terms).reverse()), null, 4))
 	assert.equal(canonicalize(reordered), canonicalize(terms))
 	assert.equal(termsHash(escrowTermsSchema.parse(reordered)), termsHash(terms))
+})
+
+test('report document: only hashes reach the chain, details are recoverable off-chain', () => {
+	const analysis = analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false)
+	const findings = compare(terms, analysis, onchain(3n))
+	const deadline = findings.find((f) => f.clause === 'Delivery deadline')!
+	assert.equal(deadline.detailsHash, detailsHash('Delivery deadline', '30 days', '3 days'))
+
+	const a = buildReport(1n, TOKEN, termsHash(terms), analysis, onchain(3n), findings)
+	const b = buildReport(1n, TOKEN, termsHash(terms), analysis, onchain(3n), [...findings])
+	assert.equal(a.hash, b.hash)
+	const doc = JSON.parse(a.canonical)
+	assert.equal(doc.findings.length, findings.length)
+	assert.equal(doc.onchain.deliveryPeriod, String(3n * 86400n))
 })

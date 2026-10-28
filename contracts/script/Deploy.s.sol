@@ -13,22 +13,21 @@ import {FreelanceEscrowV2} from "../src/demo/FreelanceEscrowV2.sol";
 ///
 /// Env:
 ///   PRIVATE_KEY          deployer (becomes escrow owner)
-///   CRE_FORWARDER        defaults to the Sepolia MockKeystoneForwarder used by `cre workflow simulate --broadcast`
 ///   CLIENT_ADDRESS       defaults to deployer
 ///   FREELANCER_ADDRESS   defaults to deployer
+/// The registry has no admin and no global forwarder: each agreement names its own verifier when the
+/// parties sign it (the web app defaults to the Sepolia MockKeystoneForwarder used by `cre workflow simulate`).
 contract Deploy is Script {
-    address constant SEPOLIA_MOCK_FORWARDER = 0x15fC6ae953E024d975e77382eEeC56A9101f9F88;
     uint256 constant AMOUNT = 1_000 * 1e6; // 1,000 USDC
 
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
-        address forwarder = vm.envOr("CRE_FORWARDER", SEPOLIA_MOCK_FORWARDER);
         address client = vm.envOr("CLIENT_ADDRESS", deployer);
         address freelancer = vm.envOr("FREELANCER_ADDRESS", deployer);
 
         vm.startBroadcast(pk);
-        LexDiffRegistry registry = new LexDiffRegistry(forwarder);
+        LexDiffRegistry registry = new LexDiffRegistry();
         MockUSDC usdc = new MockUSDC();
         FreelanceEscrowV1 v1 = new FreelanceEscrowV1(usdc, client, freelancer, AMOUNT);
         FreelanceEscrowV2 v2 = new FreelanceEscrowV2(usdc, client, freelancer, AMOUNT);
@@ -41,13 +40,13 @@ contract Deploy is Script {
 
         string memory obj = "deployment";
         vm.serializeUint(obj, "chainId", block.chainid);
+        vm.serializeUint(obj, "deployBlock", block.number);
         vm.serializeAddress(obj, "registry", address(registry));
         vm.serializeAddress(obj, "usdc", address(usdc));
         vm.serializeAddress(obj, "escrowV1", address(v1));
         vm.serializeAddress(obj, "escrowV2", address(v2));
         vm.serializeAddress(obj, "client", client);
-        vm.serializeAddress(obj, "freelancer", freelancer);
-        string memory json = vm.serializeAddress(obj, "forwarder", forwarder);
+        string memory json = vm.serializeAddress(obj, "freelancer", freelancer);
         vm.writeJson(json, string.concat("deployments/", vm.toString(block.chainid), ".json"));
     }
 }

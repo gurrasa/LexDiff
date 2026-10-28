@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["main.ts", "compare.ts", "source-analysis.ts", "terms.ts", "abi.ts"]
+  "include": ["main.ts", "compare.ts", "source-analysis.ts", "terms.ts", "abi.ts", "report.ts"]
 }

@@ -1,6 +1,6 @@
 import { formatUnits, isAddress, keccak256, parseUnits, toBytes } from 'viem'
 import type { AbiFunction, SourceAnalysis } from './source-analysis.ts'
-import type { EscrowTerms } from './terms.ts'
+import { canonicalize, type EscrowTerms } from './terms.ts'
 
 // Deterministic agreement-vs-code comparison. Pure functions only: same inputs, same findings, on every node.
 
@@ -14,6 +14,8 @@ export type Finding = {
 	clause: string
 	expected: string
 	actual: string
+	/** keccak256 of canonical {clause, expected, actual}: the only part of the details that goes on-chain */
+	detailsHash: `0x${string}`
 }
 
 /** Terms that are checked against a getter on the deployed contract. */
@@ -68,6 +70,9 @@ export type OnchainValues = {
 
 export const findingKey = (id: string): `0x${string}` => keccak256(toBytes(id))
 
+export const detailsHash = (clause: string, expected: string, actual: string): `0x${string}` =>
+	keccak256(toBytes(canonicalize({ clause, expected, actual })))
+
 export const formatDuration = (seconds: bigint): string => {
 	if (seconds % 86400n === 0n) return `${seconds / 86400n} days`
 	if (seconds % 3600n === 0n) return `${seconds / 3600n} hours`
@@ -79,7 +84,7 @@ const REFUND_NAMES = /refund|reclaim|cancel|withdrawdeposit|clawback/i
 export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: OnchainValues): Finding[] => {
 	const findings: Finding[] = []
 	const push = (id: string, kind: Kind, clause: string, expected: string, actual: string) =>
-		findings.push({ key: findingKey(id), kind, clause, expected, actual })
+		findings.push({ key: findingKey(id), kind, clause, expected, actual, detailsHash: detailsHash(clause, expected, actual) })
 
 	const addressTerm = (id: GetterTerm, clause: string, expected: string, actual: string | undefined) => {
 		if (actual === undefined) return push(`term:${id}`, Kind.Missing, clause, expected, 'no getter in contract')

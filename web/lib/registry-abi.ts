@@ -2,13 +2,7 @@
 export const registryAbi = [
   {
     "type": "constructor",
-    "inputs": [
-      {
-        "name": "forwarder_",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
+    "inputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -23,6 +17,50 @@ export const registryAbi = [
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "REGISTRATION_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "VERIFIER_TYPEHASH",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "acceptContract",
+    "inputs": [
+      {
+        "name": "agreementId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "newTarget",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -131,19 +169,6 @@ export const registryAbi = [
   },
   {
     "type": "function",
-    "name": "forwarder",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getAgreement",
     "inputs": [
       {
@@ -179,6 +204,11 @@ export const registryAbi = [
             "internalType": "address"
           },
           {
+            "name": "pendingTarget",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "termsHash",
             "type": "bytes32",
             "internalType": "bytes32"
@@ -189,9 +219,36 @@ export const registryAbi = [
             "internalType": "string"
           },
           {
-            "name": "title",
-            "type": "string",
-            "internalType": "string"
+            "name": "verifier",
+            "type": "tuple",
+            "internalType": "struct LexDiffRegistry.Verifier",
+            "components": [
+              {
+                "name": "forwarder",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "workflowOwner",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "workflowId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          },
+          {
+            "name": "supersedes",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "supersededBy",
+            "type": "uint256",
+            "internalType": "uint256"
           },
           {
             "name": "createdAt",
@@ -233,6 +290,21 @@ export const registryAbi = [
             "name": "termsHash",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "reportHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "workflowId",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "workflowOwner",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "timestamp",
@@ -310,9 +382,9 @@ export const registryAbi = [
             "internalType": "bytes32"
           },
           {
-            "name": "note",
-            "type": "string",
-            "internalType": "string"
+            "name": "noteHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "signature",
@@ -371,19 +443,9 @@ export const registryAbi = [
             "internalType": "enum LexDiffRegistry.Status"
           },
           {
-            "name": "clause",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "expected",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "actual",
-            "type": "string",
-            "internalType": "string"
+            "name": "detailsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "evidenceHash",
@@ -407,6 +469,11 @@ export const registryAbi = [
           },
           {
             "name": "resolvedInCheck",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "disputedInCheck",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -476,19 +543,9 @@ export const registryAbi = [
             "internalType": "enum LexDiffRegistry.Status"
           },
           {
-            "name": "clause",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "expected",
-            "type": "string",
-            "internalType": "string"
-          },
-          {
-            "name": "actual",
-            "type": "string",
-            "internalType": "string"
+            "name": "detailsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "evidenceHash",
@@ -512,6 +569,11 @@ export const registryAbi = [
           },
           {
             "name": "resolvedInCheck",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "disputedInCheck",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -554,7 +616,7 @@ export const registryAbi = [
     "name": "onReport",
     "inputs": [
       {
-        "name": "",
+        "name": "metadata",
         "type": "bytes",
         "internalType": "bytes"
       },
@@ -569,55 +631,104 @@ export const registryAbi = [
   },
   {
     "type": "function",
-    "name": "owner",
-    "inputs": [],
-    "outputs": [
+    "name": "proposeContract",
+    "inputs": [
       {
-        "name": "",
+        "name": "agreementId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "newTarget",
         "type": "address",
         "internalType": "address"
       }
     ],
-    "stateMutability": "view"
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
     "name": "registerAgreement",
     "inputs": [
       {
-        "name": "client",
-        "type": "address",
-        "internalType": "address"
+        "name": "r",
+        "type": "tuple",
+        "internalType": "struct LexDiffRegistry.Registration",
+        "components": [
+          {
+            "name": "client",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "reviewer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "developer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "termsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "termsURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "verifier",
+            "type": "tuple",
+            "internalType": "struct LexDiffRegistry.Verifier",
+            "components": [
+              {
+                "name": "forwarder",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "workflowOwner",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "workflowId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          },
+          {
+            "name": "supersedes",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "deadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       },
       {
-        "name": "reviewer",
-        "type": "address",
-        "internalType": "address"
+        "name": "clientSig",
+        "type": "bytes",
+        "internalType": "bytes"
       },
       {
-        "name": "developer",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "target",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "termsHash",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "termsURI",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "title",
-        "type": "string",
-        "internalType": "string"
+        "name": "reviewerSig",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [
@@ -631,10 +742,105 @@ export const registryAbi = [
   },
   {
     "type": "function",
-    "name": "renounceOwnership",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "name": "registrationDigest",
+    "inputs": [
+      {
+        "name": "r",
+        "type": "tuple",
+        "internalType": "struct LexDiffRegistry.Registration",
+        "components": [
+          {
+            "name": "client",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "reviewer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "developer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "target",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "termsHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "termsURI",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "verifier",
+            "type": "tuple",
+            "internalType": "struct LexDiffRegistry.Verifier",
+            "components": [
+              {
+                "name": "forwarder",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "workflowOwner",
+                "type": "address",
+                "internalType": "address"
+              },
+              {
+                "name": "workflowId",
+                "type": "bytes32",
+                "internalType": "bytes32"
+              }
+            ]
+          },
+          {
+            "name": "supersedes",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "deadline",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "registrationUsed",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -644,19 +850,6 @@ export const registryAbi = [
         "name": "agreementId",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "setForwarder",
-    "inputs": [
-      {
-        "name": "forwarder_",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -687,9 +880,9 @@ export const registryAbi = [
         "internalType": "bytes32"
       },
       {
-        "name": "note",
-        "type": "string",
-        "internalType": "string"
+        "name": "noteHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
       },
       {
         "name": "deadline",
@@ -730,37 +923,6 @@ export const registryAbi = [
     "stateMutability": "pure"
   },
   {
-    "type": "function",
-    "name": "transferOwnership",
-    "inputs": [
-      {
-        "name": "newOwner",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "updateContract",
-    "inputs": [
-      {
-        "name": "agreementId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "newTarget",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
     "type": "event",
     "name": "AgreementRegistered",
     "inputs": [
@@ -779,7 +941,7 @@ export const registryAbi = [
       {
         "name": "reviewer",
         "type": "address",
-        "indexed": false,
+        "indexed": true,
         "internalType": "address"
       },
       {
@@ -793,6 +955,12 @@ export const registryAbi = [
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      },
+      {
+        "name": "supersedes",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -824,6 +992,12 @@ export const registryAbi = [
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      },
+      {
+        "name": "reportHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -849,6 +1023,31 @@ export const registryAbi = [
         "type": "bytes32",
         "indexed": false,
         "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ContractProposed",
+    "inputs": [
+      {
+        "name": "agreementId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "proposed",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -911,6 +1110,12 @@ export const registryAbi = [
         "type": "uint8",
         "indexed": false,
         "internalType": "enum LexDiffRegistry.Status"
+      },
+      {
+        "name": "noteHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1015,36 +1220,15 @@ export const registryAbi = [
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "ForwarderUpdated",
+    "type": "error",
+    "name": "CannotSupersede",
     "inputs": [
       {
-        "name": "forwarder",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
+        "name": "agreementId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "OwnershipTransferred",
-    "inputs": [
-      {
-        "name": "previousOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newOwner",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
+    ]
   },
   {
     "type": "error",
@@ -1054,7 +1238,13 @@ export const registryAbi = [
   {
     "type": "error",
     "name": "InvalidSignature",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "expectedSigner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -1074,10 +1264,32 @@ export const registryAbi = [
   },
   {
     "type": "error",
+    "name": "NoPendingContract",
+    "inputs": [
+      {
+        "name": "proposed",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "NotAParty",
     "inputs": [
       {
-        "name": "sender",
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotClient",
+    "inputs": [
+      {
+        "name": "account",
         "type": "address",
         "internalType": "address"
       }
@@ -1091,15 +1303,9 @@ export const registryAbi = [
         "name": "sender",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "OwnableInvalidOwner",
-    "inputs": [
+      },
       {
-        "name": "owner",
+        "name": "expected",
         "type": "address",
         "internalType": "address"
       }
@@ -1107,14 +1313,13 @@ export const registryAbi = [
   },
   {
     "type": "error",
-    "name": "OwnableUnauthorizedAccount",
-    "inputs": [
-      {
-        "name": "account",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
+    "name": "ReasonRequired",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "RegistrationReplayed",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1217,6 +1422,11 @@ export const registryAbi = [
         "internalType": "enum LexDiffRegistry.DecisionType"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "WrongWorkflow",
+    "inputs": []
   },
   {
     "type": "error",

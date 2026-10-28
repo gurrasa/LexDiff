@@ -6,6 +6,7 @@ import {
 	encodeCallMsg,
 	getNetwork,
 	HTTPCapability,
+	hexToBase64,
 	HTTPClient,
 	type HTTPPayload,
 	type HTTPSendRequester,
@@ -26,6 +27,7 @@ import {
 	encodeAbiParameters,
 	encodeFunctionData,
 	hexToBigInt,
+	toHex,
 	keccak256,
 	toBytes,
 	toEventSelector,
@@ -34,6 +36,7 @@ import {
 import { z } from 'zod'
 import { ERC20_ABI, REGISTRY_ABI, REPORT_PARAMS } from './abi.ts'
 import { compare, type Finding, GETTER_CANDIDATES, type GetterTerm, type OnchainValues, resolveGetters } from './compare.ts'
+import { buildReport } from './report.ts'
 import { analyzeSource, type EtherscanSourceResult, type SourceAnalysis } from './source-analysis.ts'
 import { canonicalize, type EscrowTerms, escrowTermsSchema } from './terms.ts'
 
@@ -42,6 +45,7 @@ const configSchema = z.object({
 	registryAddress: z.string(),
 	etherscanApiUrl: z.string(),
 	etherscanChainId: z.string(),
+	evidenceStoreUrl: z.string(),
 	gasLimit: z.string(),
 })
 
@@ -77,6 +81,22 @@ const fetchSourceAnalysis = (
 		throw new Error(`etherscan error: ${JSON.stringify(body.result)}`)
 	}
 	return JSON.stringify(analyzeSource(body.result[0]))
+}
+
+/** Stores the full report off-chain. The store is content-addressed and must echo the same hash. */
+const storeReport = (requester: HTTPSendRequester, url: string, canonical: string, hash: string): string => {
+	const response = requester
+		.sendRequest({
+			url,
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: hexToBase64(toHex(toBytes(canonical))),
+		})
+		.result()
+	if (!ok(response)) throw new Error(`evidence store failed: HTTP ${response.statusCode}`)
+	const stored = (JSON.parse(text(response)) as { hash: string }).hash
+	if (stored !== hash) throw new Error(`evidence store returned ${stored}, expected ${hash}`)
+	return stored
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +152,8 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 
 	// 1. What does the registry say we are comparing?
 	const a = readAgreement(runtime, evm, agreementId)
-	runtime.log(`Agreement #${agreementId} "${a.title}" -> ${a.target}`)
+	runtime.log(`Agreement #${agreementId} -> ${a.target} (verifier ${a.verifier.forwarder})`)
+	if (a.supersededBy !== 0n) runtime.log(`Note: agreement #${agreementId} is superseded by #${a.supersededBy}`)
 
 	// 2. Agreement terms, verified against the hash registered on-chain.
 	const canonicalTerms = http
@@ -161,19 +182,31 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	const findings = compare(terms, analysis, onchain)
 	for (const f of findings) runtime.log(`  [${['MATCH', 'MISMATCH', 'MISSING', 'HIDDEN'][f.kind]}] ${f.clause}: expected ${f.expected}, actual ${f.actual}`)
 
-	// 6. Signed report -> Keystone forwarder -> LexDiffRegistry.onReport
+	// 6. Full report off-chain (it names vulnerabilities); only hashes go on-chain.
+	const report = buildReport(agreementId, a.target, a.termsHash, analysis, onchain, findings)
+	http
+		.sendRequest(runtime, storeReport, consensusIdenticalAggregation<string>())(
+			config.evidenceStoreUrl,
+			report.canonical,
+			report.hash,
+		)
+		.result()
+	runtime.log(`Report document stored (${report.hash})`)
+
+	// 7. Signed report -> agreed Keystone forwarder -> LexDiffRegistry.onReport
 	const payload = encodeAbiParameters(REPORT_PARAMS, [
 		agreementId,
 		a.target,
 		analysis.codeHash,
 		a.termsHash,
-		findings.map((f: Finding) => ({ ...f })),
+		report.hash,
+		findings.map((f: Finding) => ({ key: f.key, kind: f.kind, detailsHash: f.detailsHash })),
 	])
-	const report = runtime.report(prepareReportRequest(payload)).result()
+	const signed = runtime.report(prepareReportRequest(payload)).result()
 	const reply = evm
 		.writeReport(runtime, {
 			receiver: config.registryAddress,
-			report,
+			report: signed,
 			gasConfig: { gasLimit: config.gasLimit },
 		})
 		.result()
@@ -182,7 +215,7 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	}
 	const txHash = reply.txHash ? bytesToHex(reply.txHash) : 'n/a'
 	runtime.log(`Report written: ${txHash}`)
-	return JSON.stringify({ agreementId: agreementId.toString(), findings: findings.length, txHash })
+	return JSON.stringify({ agreementId: agreementId.toString(), findings: findings.length, reportHash: report.hash, txHash })
 }
 
 const readAgreement = (runtime: Runtime<Config>, evm: EVMClient, agreementId: bigint) => {

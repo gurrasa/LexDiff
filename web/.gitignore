@@ -41,5 +41,5 @@ yarn-error.log*
 next-env.d.ts
 
 # published terms (local demo storage)
-/data/terms/*.json
+/data/evidence/*.json
 !.env.example

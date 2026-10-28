@@ -3,5 +3,6 @@
   "registryAddress": "0x0000000000000000000000000000000000000000",
   "etherscanApiUrl": "https://api.etherscan.io/v2/api",
   "etherscanChainId": "11155111",
+  "evidenceStoreUrl": "http://localhost:3000/api/evidence",
   "gasLimit": "5000000"
 }

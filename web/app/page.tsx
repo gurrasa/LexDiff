@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { type Agreement, type Finding, REGISTRY_ADDRESS, registry, shortAddr } from '@/lib/registry'
+import { type Agreement, type Finding, getEvidence, REGISTRY_ADDRESS, registry, shortAddr } from '@/lib/registry'
+import type { EscrowTerms } from '@/lib/terms'
 
-type Row = { id: bigint; agreement: Agreement; findings: Finding[] }
+type Row = { id: bigint; agreement: Agreement; title: string; findings: Finding[] }
 
 export default function Home() {
   const [rows, setRows] = useState<Row[] | null>(null)
@@ -17,7 +18,11 @@ export default function Home() {
       const ids = Array.from({ length: Number(count) }, (_, i) => BigInt(i + 1)).reverse()
       setRows(
         await Promise.all(
-          ids.map(async (id) => ({ id, agreement: await registry.getAgreement(id), findings: await registry.getFindings(id) })),
+          ids.map(async (id) => {
+            const agreement = await registry.getAgreement(id)
+            const terms = await getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI)
+            return { id, agreement, title: terms?.title ?? 'Terms unavailable', findings: await registry.getFindings(id) }
+          }),
         ),
       )
     })().catch((e) => setError(String(e?.shortMessage ?? e)))
@@ -54,17 +59,18 @@ export default function Home() {
       <div className="stack" style={{ marginTop: '1rem' }}>
         {rows === null && REGISTRY_ADDRESS && !error && <p className="muted">Loading from Sepolia…</p>}
         {rows?.length === 0 && <p className="muted">No agreements yet.</p>}
-        {rows?.map(({ id, agreement, findings }) => {
+        {rows?.map(({ id, agreement, title, findings }) => {
           const open = findings.filter((f) => f.status === 1 || f.status === 3).length
           const accepted = findings.filter((f) => f.status === 2).length
           const resolved = findings.filter((f) => f.status === 4).length
           return (
             <Link key={id.toString()} href={`/agreements/${id}`} className="panel row spread" style={{ color: 'inherit' }}>
               <div>
-                <h3 style={{ margin: 0 }}>#{id.toString()} · {agreement.title}</h3>
+                <h3 style={{ margin: 0 }}>#{id.toString()} · {title}</h3>
                 <span className="small muted mono">contract {shortAddr(agreement.target)}</span>
               </div>
               <div className="row">
+                {agreement.supersededBy > BigInt(0) && <span className="badge tone-muted">amended by #{agreement.supersededBy.toString()}</span>}
                 {findings.length === 0 && <span className="badge tone-muted">Awaiting CRE check</span>}
                 {open > 0 && <span className="badge tone-bad">{open} open</span>}
                 {accepted > 0 && <span className="badge tone-warn">{accepted} accepted risk</span>}
@@ -75,14 +81,19 @@ export default function Home() {
         })}
       </div>
 
-      <h2>How it works</h2>
+      <h2>Six questions, each with a signed or verified answer</h2>
       <ol className="steps">
-        <li><b>The agreement is read.</b> Claude extracts parties, amounts, deadlines, payout and refund rules and admin powers. Counsel reviews the draft; its hash is registered on-chain.</li>
-        <li><b>A Chainlink CRE workflow compares.</b> It reads the contract&apos;s on-chain values and its verified source from Etherscan, and deterministically compares them with the terms.</li>
-        <li><b>Findings are recorded.</b> Each one is written to the registry with an evidence hash and status Open.</li>
-        <li><b>Accountability.</b> The client can sign <i>Accepted risk</i>; the reviewer can assign <i>Remediation required</i> to the developer. Every decision is EIP-712 signed and stored on-chain.</li>
-        <li><b>CRE confirms the fix.</b> After redeployment the workflow re-runs. Only a CRE report can mark a finding Resolved.</li>
+        <li><b>What was agreed?</b> Claude drafts the terms with verbatim quotes. The reviewer and the client sign the reviewed terms, the roles and the verifier.</li>
+        <li><b>Does the code match?</b> A Chainlink CRE workflow compares the terms with the verified source and on-chain state, deterministically.</li>
+        <li><b>Who knew?</b> Findings are anchored on-chain by hash; parties sign <i>Acknowledge</i> on the exact evidence they saw.</li>
+        <li><b>Who took the risk, and who fixes?</b> The client signs <i>Accepted risk</i>; the reviewer signs <i>Remediation required</i> for the developer.</li>
+        <li><b>Is it fixed?</b> Only a report from the agreement&apos;s own verifier can mark a finding Resolved.</li>
+        <li><b>Who disputes?</b> Any party can sign <i>Dispute</i>. History is never rewritten; amendments become new agreements.</li>
       </ol>
+      <p className="small muted">
+        Only hashes are stored on-chain. Terms, reports and notes live in the evidence store and are checked against those hashes.
+        A wallet signature proves control of a key, not legal identity or binding consent.
+      </p>
     </>
   )
 }
