@@ -1,0 +1,10 @@
+# CRE project settings. RPC URLs may reference env vars from .env (${VAR}).
+staging-settings:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: ${SEPOLIA_RPC_URL}
+
+production-settings:
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: ${SEPOLIA_RPC_URL}
