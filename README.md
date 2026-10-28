@@ -114,7 +114,7 @@ No Anthropic key? Paste [agreements/freelance-escrow.terms.example.json](agreeme
 cd cre
 cp .env.example .env         # CRE_ETH_PRIVATE_KEY, SEPOLIA_RPC_URL, ETHERSCAN_API_KEY_VALUE
 cd lexdiff-workflow
-bun install
+bun install && bun run setup   # setup installs the Javy WASM toolchain used by `cre`
 # set registryAddress in config.staging.json
 npm test                     # comparison unit tests against the real V1/V2 sources
 cd ..
