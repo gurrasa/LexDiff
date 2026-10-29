@@ -1,11 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
+import { rateLimited } from '@/lib/rate-limit'
 import { escrowTermsSchema } from '@/lib/terms'
 
 // AI extraction runs here, outside the CRE workflow: LLM output is not deterministic enough for
 // DON consensus. The result is a draft that counsel reviews before its hash is registered on-chain.
 
-const client = new Anthropic()
+// Created on first use so a build without ANTHROPIC_API_KEY (e.g. on a host) never fails.
+let client: Anthropic | null = null
 
 const SYSTEM = `You extract the operative terms of an escrow agreement into structured data for a tool that compares the agreement with the smart contract meant to enforce it.
 
@@ -19,10 +21,15 @@ Rules:
 - schema is always "lexdiff/escrow-terms@1".`
 
 export async function POST(request: Request) {
+  if (rateLimited(request, 10, 60 * 60 * 1000)) {
+    return Response.json({ error: 'Too many extractions from this address. Try again in an hour.' }, { status: 429 })
+  }
   const { text } = (await request.json()) as { text?: string }
   if (!text?.trim()) return Response.json({ error: 'Agreement text is required' }, { status: 400 })
+  if (text.length > 100_000) return Response.json({ error: 'The agreement is too long for this demo (100,000 characters max).' }, { status: 413 })
 
   try {
+    client ??= new Anthropic()
     const response = await client.beta.messages.parse({
       model: 'claude-opus-5-5',
       max_tokens: 16000,

@@ -11,7 +11,12 @@
 #   LOGIC=0x… REGISTRY=0x… USDC=0x… V1=0x… V2=0x… ./script/deploy-sepolia.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Values given on the command line win over contracts/.env (which may hold empty placeholders).
+CLI_CLIENT="${CLIENT_ADDRESS:-}"
+CLI_FREELANCER="${FREELANCER_ADDRESS:-}"
 source .env
+CLIENT_ADDRESS="${CLI_CLIENT:-${CLIENT_ADDRESS:-}}"
+FREELANCER_ADDRESS="${CLI_FREELANCER:-${FREELANCER_ADDRESS:-}}"
 
 RPC="${RPC_URL:-$SEPOLIA_RPC_URL}"
 ME=$(cast wallet address "$PRIVATE_KEY")
@@ -81,10 +86,14 @@ cat > "deployments/$CHAIN_ID.json" <<JSON
   "escrowV1": "$V1",
   "escrowV2": "$V2",
   "websiteEscrow": "$WEBSITE",
+  "developer": "$ME",
   "client": "$CLIENT",
   "freelancer": "$FREELANCER"
 }
 JSON
+
+# The web app reads demo addresses from here when deployed on its own (e.g. Railway builds only web/).
+[ "$CHAIN_ID" = "11155111" ] && cp "deployments/$CHAIN_ID.json" ../web/deployments.json
 
 verify "$LOGIC" src/LexDiffLogic.sol:LexDiffLogic
 verify "$REGISTRY" src/LexDiffRegistry.sol:LexDiffRegistry --libraries "src/LexDiffLogic.sol:LexDiffLogic:$LOGIC"

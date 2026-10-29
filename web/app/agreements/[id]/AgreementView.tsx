@@ -25,6 +25,7 @@ import {
   type Level,
   type ReportDocument,
   registry,
+  watchAccount,
   same,
   STATUS_TONE,
   shortAddr,
@@ -106,6 +107,16 @@ export default function AgreementView() {
     )
     setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText, chainEvents })
   }, [id])
+
+  // Follow MetaMask: switching account switches role, so each person sees only their own actions.
+  useEffect(
+    () =>
+      watchAccount((next) => {
+        setAccount(next)
+        setActingAs(null)
+      }),
+    [],
+  )
 
   useEffect(() => {
     load().catch((e) => setError(String(e?.shortMessage ?? e)))

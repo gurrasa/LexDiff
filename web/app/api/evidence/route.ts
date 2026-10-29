@@ -10,6 +10,10 @@ import { canonicalize, escrowTermsSchema } from '@/lib/terms'
 const DIR = process.env.EVIDENCE_DIR || path.join(process.cwd(), 'data', 'evidence')
 
 export async function POST(request: Request) {
+  // Evidence documents are small JSON; refuse anything that could be used to fill the disk.
+  if (Number(request.headers.get('content-length') ?? 0) > 256_000) {
+    return Response.json({ error: 'evidence document too large' }, { status: 413 })
+  }
   let value: unknown
   try {
     value = await request.json()

@@ -179,6 +179,26 @@ Keep the web app running: CRE fetches the terms from it and posts the report doc
 
 Trigger index `0` is the HTTP trigger; `1` is the EVM log trigger on `CheckRequested` (use `--evm-tx-hash <tx> --evm-event-index <n>`).
 
+### Hosting the web app (Railway)
+
+The app needs a persistent disk for its evidence store and signing requests.
+
+1. Railway → **New project** → **Deploy from GitHub repo** → `LexDiff`.
+2. Service **Settings → Root Directory**: `web`.
+3. **Volume**: mount at `/data`.
+4. **Variables**:
+   - `ANTHROPIC_API_KEY`
+   - `NEXT_PUBLIC_REGISTRY_ADDRESS`
+   - `NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK=12015602`
+   - `NEXT_PUBLIC_SEPOLIA_RPC_URL`
+   - `EVIDENCE_DIR=/data/evidence`
+   - `REGISTRATIONS_DIR=/data/registrations`
+   - `PUBLIC_BASE_URL=https://<your-domain>`
+   - `ENABLE_LOCAL_CRE=false`
+5. **Settings → Networking → Generate domain**, put it in `PUBLIC_BASE_URL`, and redeploy.
+
+The CRE workflow still runs from a laptop. Point it at the hosted store by setting `evidenceStoreUrl` in `cre/lexdiff-workflow/config.staging.json` to `https://<your-domain>/api/evidence`. Claude extraction is rate-limited per visitor (10 per hour).
+
 ### 4. Finish the demo
 
 The agreement page shows where you are (*Agreement signed → Code checked → Decisions → Fix → Re-check → Ready*) and who has to act next. With one wallet holding every role, use **Act as** to switch between client, reviewer and developer.

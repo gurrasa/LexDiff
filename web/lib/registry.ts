@@ -88,6 +88,19 @@ export type AgreementEvent = {
   args: Record<string, unknown>
 }
 
+/** A registration waiting for the client's and reviewer's signatures, shared via /sign/[id]. */
+export type PendingRegistration = {
+  id: Hex
+  registration: Registration
+  signatures: { client?: Hex; reviewer?: Hex }
+  agreementId?: string
+}
+
+/** JSON can't carry bigint: Registration travels with supersedes/deadline as decimal strings. */
+export const registrationToJson = (r: Registration) => ({ ...r, supersedes: r.supersedes.toString(), deadline: r.deadline.toString() })
+export const registrationFromJson = (r: Record<string, unknown>): Registration =>
+  ({ ...(r as Registration), supersedes: BigInt(r.supersedes as string), deadline: BigInt(r.deadline as string) })
+
 export type Registration = {
   client: Address
   reviewer: Address
@@ -176,24 +189,46 @@ export async function putEvidence(value: unknown): Promise<{ hash: Hex; uri: str
   return body
 }
 
-/** Fetches evidence and checks it against the hash. Returns null when unavailable or tampered. */
-export async function getEvidence<T>(hash: Hex, uri = `/api/evidence/${hash}`): Promise<T | null> {
-  try {
-    const res = await fetch(uri)
-    if (!res.ok) return null
-    const value = await res.json()
-    return hashEvidence(value) === hash ? (value as T) : null
-  } catch {
-    return null
+/**
+ * Fetches evidence and checks it against the hash. Returns null when unavailable or tampered.
+ * Tries this app's own store first, then `uri` (e.g. a termsURI recorded as http://localhost:3000/…,
+ * which only works on the machine that registered it). The hash check makes the source irrelevant.
+ */
+export async function getEvidence<T>(hash: Hex, uri?: string): Promise<T | null> {
+  for (const source of [`/api/evidence/${hash}`, uri]) {
+    if (!source) continue
+    try {
+      const res = await fetch(source)
+      if (!res.ok) continue
+      const value = await res.json()
+      if (hashEvidence(value) === hash) return value as T
+    } catch {}
   }
+  return null
 }
 
 // --- Wallet ----------------------------------------------------------------
 
-type Eip1193 = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> }
+type Eip1193 = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>
+  on?: (event: string, cb: (accounts: string[]) => void) => void
+  removeListener?: (event: string, cb: (accounts: string[]) => void) => void
+}
+
+const injected = () => (globalThis as { ethereum?: Eip1193 }).ethereum
+
+/** Currently connected account without prompting, plus updates when the user switches account in MetaMask. */
+export function watchAccount(onChange: (account: Address | null) => void): () => void {
+  const ethereum = injected()
+  if (!ethereum) return () => {}
+  const handler = (accounts: string[]) => onChange((accounts[0] as Address) ?? null)
+  ethereum.request({ method: 'eth_accounts' }).then((a) => handler(a as string[])).catch(() => {})
+  ethereum.on?.('accountsChanged', handler)
+  return () => ethereum.removeListener?.('accountsChanged', handler)
+}
 
 export async function connectWallet() {
-  const ethereum = (globalThis as { ethereum?: Eip1193 }).ethereum
+  const ethereum = injected()
   if (!ethereum) throw new Error('No injected wallet found. Install MetaMask or a compatible wallet.')
   const wallet = createWalletClient({ chain: sepolia, transport: custom(ethereum) })
   const [account] = await wallet.requestAddresses()

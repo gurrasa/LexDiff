@@ -2,18 +2,14 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { decodeEventLog, isAddress, isHex, type Address, type Hex } from 'viem'
+import { isAddress, isHex, type Address, type Hex } from 'viem'
 import {
   connectWallet,
-  DOMAIN,
   putEvidence,
   type Registration,
-  REGISTRATION_TYPES,
-  registryAbi,
-  same,
+  registrationToJson,
   SEPOLIA_MOCK_FORWARDER,
   shortAddr,
-  writeRegistry,
   ZERO_BYTES32,
 } from '@/lib/registry'
 import { type EscrowTerms, escrowTermsSchema } from '@/lib/terms'
@@ -27,10 +23,9 @@ export default function NewAgreement() {
   const [roles, setRoles] = useState({ client: '', freelancer: '', reviewer: '', developer: '', target: '' })
   const [verifier, setVerifier] = useState({ forwarder: SEPOLIA_MOCK_FORWARDER as string, workflowOwner: '', workflowId: '' })
   const [supersedes, setSupersedes] = useState('')
-  const [registration, setRegistration] = useState<Registration | null>(null)
-  const [sigs, setSigs] = useState<{ client?: Hex; reviewer?: Hex }>({})
   const [demoV1, setDemoV1] = useState<string | null>(null)
   const [demoWebsite, setDemoWebsite] = useState<string | null>(null)
+  const [demoParties, setDemoParties] = useState<{ client?: string; freelancer?: string; developer?: string }>({})
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
@@ -40,6 +35,7 @@ export default function NewAgreement() {
       .then((d) => {
         setDemoV1(d.escrowV1)
         setDemoWebsite(d.websiteEscrow)
+        setDemoParties({ client: d.client ?? undefined, freelancer: d.freelancer ?? undefined, developer: d.developer ?? undefined })
       })
       .catch(() => {})
   }, [])
@@ -57,11 +53,8 @@ export default function NewAgreement() {
     }
   }
 
-  // Anything edited after publishing invalidates the signatures collected so far.
-  const resetSignatures = () => {
-    setRegistration(null)
-    setSigs({})
-  }
+  // Signatures are collected on /sign/[id] after saving, so editing here never invalidates them.
+  const resetSignatures = () => {}
 
   const extractFrom = async (agreement: string) => {
     const res = await fetch('/api/extract', { method: 'POST', body: JSON.stringify({ text: agreement }) })
@@ -78,8 +71,16 @@ export default function NewAgreement() {
     run('Setting up the demo', async () => {
       const demo = await (await fetch(`/demo/${name}.md`)).text()
       setText(demo)
+      // You fill this in as the lawyer. Client, freelancer and developer are the parties the demo escrow was
+      // deployed with, so each of them can act from their own wallet.
       const { account } = await connectWallet()
-      setRoles({ client: account, freelancer: account, reviewer: account, developer: account, target: target ?? '' })
+      setRoles({
+        client: demoParties.client ?? account,
+        freelancer: demoParties.freelancer ?? account,
+        reviewer: account,
+        developer: demoParties.developer ?? account,
+        target: target ?? '',
+      })
       setBusy('Claude is reading the agreement (10–30 seconds)')
       try {
         await extractFrom(demo)
@@ -106,8 +107,7 @@ export default function NewAgreement() {
         },
       })
       const published = await putEvidence(terms)
-      setSigs({})
-      setRegistration({
+      const registration: Registration = {
         client: roles.client as Address,
         reviewer: roles.reviewer as Address,
         developer: roles.developer as Address,
@@ -120,42 +120,14 @@ export default function NewAgreement() {
           workflowId: (verifier.workflowId || ZERO_BYTES32) as Hex,
         },
         supersedes: BigInt(supersedes || 0),
-        deadline: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600),
-      })
-    })
-
-  const sign = (role: 'client' | 'reviewer') =>
-    run('Waiting for your signature', async () => {
-      if (!registration) return
-      const { wallet, account } = await connectWallet()
-      if (!same(account, registration[role])) {
-        throw new Error(`Switch MetaMask to the ${role}'s account (${shortAddr(registration[role])}).`)
+        // A week for everyone to sign; the request expires after that.
+        deadline: BigInt(Math.floor(Date.now() / 1000) + 7 * 24 * 3600),
       }
-      const signature = await wallet.signTypedData({
-        account,
-        domain: DOMAIN(),
-        types: REGISTRATION_TYPES,
-        primaryType: 'Registration',
-        message: registration,
-      })
-      // One person holding both roles signs once.
-      setSigs((s) => (same(registration.client, registration.reviewer) ? { client: signature, reviewer: signature } : { ...s, [role]: signature }))
-    })
-
-  const register = () =>
-    run('Registering on Sepolia', async () => {
-      if (!registration || !sigs.client || !sigs.reviewer) return
-      const receipt = await writeRegistry('registerAgreement', [registration, sigs.client, sigs.reviewer])
-      for (const log of receipt.logs) {
-        try {
-          const ev = decodeEventLog({ abi: registryAbi, data: log.data, topics: log.topics })
-          if (ev.eventName === 'AgreementRegistered') {
-            router.push(`/agreements/${(ev.args as { agreementId: bigint }).agreementId}`)
-            return
-          }
-        } catch {}
-      }
-      router.push('/')
+      setBusy('Creating the signing link')
+      const res = await fetch('/api/registrations', { method: 'POST', body: JSON.stringify({ registration: registrationToJson(registration) }) })
+      const pending = await res.json()
+      if (!res.ok) throw new Error(pending.error)
+      router.push(`/sign/${pending.id}`)
     })
 
   let preview: EscrowTerms | null = null
@@ -175,8 +147,6 @@ export default function NewAgreement() {
     />
   )
 
-  const signedBoth = !!sigs.client && !!sigs.reviewer
-  const oneSigner = registration && same(registration.client, registration.reviewer)
 
   return (
     <>
@@ -282,21 +252,13 @@ export default function NewAgreement() {
       </section>
 
       <section className="panel stack" style={{ marginTop: '1rem' }}>
-        <h2 style={{ margin: 0 }}>4. Sign and register</h2>
+        <h2 style={{ margin: 0 }}>4. Save and send for signatures</h2>
         <p className="small muted" style={{ margin: 0 }}>
-          The lawyer and the client both sign. That records who approved Claude&apos;s reading of the agreement. Only fingerprints (hashes) go on the blockchain; the terms themselves stay private.
+          Saving creates a signing page. The lawyer and the client each open it and sign with their own wallet. That records
+          who approved Claude&apos;s reading of the agreement. Only fingerprints (hashes) go on the blockchain; the terms stay private.
         </p>
         <div className="row">
-          <button onClick={publish} disabled={!!busy || !preview}>{registration ? '✓ Terms saved' : 'a. Save the approved terms'}</button>
-          {oneSigner ? (
-            <button onClick={() => sign('reviewer')} disabled={!!busy || !registration || signedBoth}>{signedBoth ? '✓ Signed' : 'b. Sign (as lawyer and client)'}</button>
-          ) : (
-            <>
-              <button onClick={() => sign('reviewer')} disabled={!!busy || !registration || !!sigs.reviewer}>{sigs.reviewer ? '✓ Lawyer signed' : 'b. Lawyer signs'}</button>
-              <button onClick={() => sign('client')} disabled={!!busy || !registration || !!sigs.client}>{sigs.client ? '✓ Client signed' : 'c. Client signs'}</button>
-            </>
-          )}
-          <button onClick={register} disabled={!!busy || !signedBoth}>Register on the blockchain</button>
+          <button onClick={publish} disabled={!!busy || !preview}>Save the approved terms and create the signing link</button>
         </div>
       </section>
     </>
