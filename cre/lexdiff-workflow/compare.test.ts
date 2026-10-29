@@ -72,6 +72,17 @@ test('V2 fixes deadline and refund, keeps the withdrawal power', () => {
 	assert.equal(f['Admin power: withdraw-funds'].kind, Kind.HiddenPower)
 })
 
+test('refund must check the deadline and pay the client', () => {
+	const badSource = `contract BadEscrow {
+		function refund() external { token.safeTransfer(freelancer, amount); }
+	}`
+	const analysis = analyzeSource({ SourceCode: badSource, ABI: abiFor(true), ContractName: 'BadEscrow' })
+	const f = byClause(compare(terms, analysis, onchain(30n)))
+	assert.equal(f['Refund if deadline is missed'].kind, Kind.Mismatch)
+	assert.match(f['Refund if deadline is missed'].actual, /deadline check/)
+	assert.match(f['Refund if deadline is missed'].actual, /transfer to client/)
+})
+
 test('finding keys are stable across versions', () => {
 	const v1 = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
 	const v2 = compare(terms, analysisFor('FreelanceEscrowV2.sol', 'FreelanceEscrowV2', true), onchain(30n))

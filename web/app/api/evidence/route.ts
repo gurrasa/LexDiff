@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { keccak256, toBytes } from 'viem'
 import { canonicalize, escrowTermsSchema } from '@/lib/terms'
@@ -7,7 +7,7 @@ import { canonicalize, escrowTermsSchema } from '@/lib/terms'
 // reviewed terms, CRE report documents and decision notes. Each item is stored as canonical JSON
 // under keccak256(canonical), which is exactly the hash anchored on-chain.
 
-const DIR = path.join(process.cwd(), 'data', 'evidence')
+const DIR = process.env.EVIDENCE_DIR || path.join(process.cwd(), 'data', 'evidence')
 
 export async function POST(request: Request) {
   let value: unknown
@@ -25,7 +25,21 @@ export async function POST(request: Request) {
   const canonical = canonicalize(value)
   const hash = keccak256(toBytes(canonical))
   await mkdir(DIR, { recursive: true })
-  await writeFile(path.join(DIR, `${hash}.json`), canonical)
+	const file = path.join(DIR, `${hash}.json`)
+	try {
+		const existing = await readFile(file, 'utf8')
+		if (existing !== canonical) return Response.json({ error: 'immutable evidence conflict' }, { status: 409 })
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+		try {
+			await writeFile(file, canonical, { flag: 'wx' })
+		} catch (writeError) {
+			if ((writeError as NodeJS.ErrnoException).code !== 'EEXIST') throw writeError
+			if ((await readFile(file, 'utf8')) !== canonical) {
+				return Response.json({ error: 'immutable evidence conflict' }, { status: 409 })
+			}
+		}
+	}
 
   const base = process.env.PUBLIC_BASE_URL || new URL(request.url).origin
   return Response.json({ hash, uri: `${base}/api/evidence/${hash}` })

@@ -81,6 +81,13 @@ export type Decision = {
   atCheck: number
 }
 
+export type AgreementEvent = {
+  eventName: string
+  transactionHash: Hex
+  blockNumber: bigint
+  args: Record<string, unknown>
+}
+
 export type Registration = {
   client: Address
   reviewer: Address
@@ -112,6 +119,26 @@ export const registry = {
   getContractHistory: (id: bigint) => read<Address[]>('getContractHistory', [id]),
   getDecisions: (id: bigint, key: Hex) => read<Decision[]>('getDecisions', [id, key]),
   nonces: (signer: Address) => read<bigint>('nonces', [signer]),
+  getEvents: async (id: bigint): Promise<AgreementEvent[]> => {
+    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK || '12015707')
+    const logs = await publicClient.getContractEvents({
+      address: REGISTRY_ADDRESS,
+      abi: registryAbi,
+      fromBlock,
+      toBlock: 'latest',
+    })
+    return logs
+      .filter((log) => {
+        if (!('args' in log) || !log.args) return false
+        return (log.args as { agreementId?: bigint }).agreementId === id
+      })
+      .map((log) => ({
+        eventName: log.eventName,
+        transactionHash: log.transactionHash,
+        blockNumber: log.blockNumber,
+        args: log.args as Record<string, unknown>,
+      }))
+  },
 }
 
 // --- Off-chain evidence (content-addressed, verified against on-chain hashes) ----------------

@@ -135,12 +135,22 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 		const refundFn = analysis.abi.find(
 			(f) => REFUND_NAMES.test(f.name) && f.stateMutability !== 'view' && f.stateMutability !== 'pure',
 		)
+		const structure = refundFn ? analysis.refunds.find((f) => f.name === refundFn.name) : undefined
+		const valid = !!structure?.checksDeadline && !!structure?.paysClient
+		const actual = !refundFn
+			? 'no refund function'
+			: valid
+				? `${refundFn.name}() checks the deadline and transfers to client`
+				: `${refundFn.name}() lacks ${[
+						!structure?.checksDeadline && 'a deadline check',
+						!structure?.paysClient && 'a transfer to client',
+					].filter(Boolean).join(' and ')}`
 		push(
 			'term:refundOnMissedDeadline',
-			refundFn ? Kind.Match : Kind.Missing,
+			!refundFn ? Kind.Missing : valid ? Kind.Match : Kind.Mismatch,
 			'Refund if deadline is missed',
 			terms.refund.description || 'client refunded when delivery deadline is missed',
-			refundFn ? `${refundFn.name}()` : 'no refund function',
+			actual,
 		)
 	}
 
