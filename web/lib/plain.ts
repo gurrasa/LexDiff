@@ -12,7 +12,7 @@ export const ROLES: Record<Role, { label: string; who: string; can: string }> = 
     can: 'Can knowingly accept a failing property as a risk, and approves which contract to fund.',
   },
   reviewer: {
-    label: 'Reviewer',
+    label: 'Lawyer',
     who: 'Legal counsel. Approved the terms.',
     can: 'Can require the developer to fix a failing property.',
   },
@@ -22,20 +22,23 @@ export const ROLES: Record<Role, { label: string; who: string; can: string }> = 
     can: 'Fixes properties and proposes the corrected contract.',
   },
   freelancer: {
-    label: 'Freelancer',
-    who: 'Gets paid from the escrow.',
+    label: 'Payee',
+    who: 'Gets paid from the escrow (usually the developer).',
     can: 'Can confirm having seen a finding, or dispute it.',
   },
 }
 
 const ALL: Role[] = ['client', 'reviewer', 'developer', 'freelancer']
 
-export const rolesOf = (a: Agreement, account?: Address | null): Role[] =>
-  account ? ALL.filter((r) => same(account, a[r])) : []
+/** The roles this wallet holds. A developer who is also the payee is shown simply as the developer. */
+export const rolesOf = (a: Agreement, account?: Address | null): Role[] => {
+  const roles = account ? ALL.filter((r) => same(account, a[r])) : []
+  return roles.includes('developer') ? roles.filter((r) => r !== 'freelancer') : roles
+}
 
 export const roleNames = (a: Agreement, account: string) =>
-  ALL.filter((r) => same(account, a[r]))
-    .map((r) => ROLES[r].label.toLowerCase())
+  rolesOf(a, account as Address)
+    .map((r) => (r === 'reviewer' ? 'lawyer' : ROLES[r].label.toLowerCase()))
     .join(' & ') || 'someone'
 
 /** What the comparison observed. */

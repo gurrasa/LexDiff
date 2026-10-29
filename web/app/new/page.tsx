@@ -27,6 +27,8 @@ export default function NewAgreement() {
   const [demoV1, setDemoV1] = useState<string | null>(null)
   const [demoWebsite, setDemoWebsite] = useState<string | null>(null)
   const [demoParties, setDemoParties] = useState<{ client?: string; freelancer?: string; developer?: string }>({})
+  // Usually one person builds the work and gets paid; a separate payee is the exception.
+  const [payeeIsDeveloper, setPayeeIsDeveloper] = useState(true)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
@@ -77,7 +79,7 @@ export default function NewAgreement() {
       const { account } = await connectWallet()
       setRoles({
         client: demoParties.client ?? account,
-        freelancer: demoParties.freelancer ?? account,
+        freelancer: demoParties.freelancer ?? demoParties.developer ?? account,
         reviewer: account,
         developer: demoParties.developer ?? account,
         target: target ?? '',
@@ -104,7 +106,7 @@ export default function NewAgreement() {
         ...draft,
         parties: {
           client: { ...draft.parties.client, wallet: roles.client },
-          freelancer: { ...draft.parties.freelancer, wallet: roles.freelancer },
+          freelancer: { ...draft.parties.freelancer, wallet: payeeIsDeveloper ? roles.developer : roles.freelancer },
         },
       })
       if (!text.trim()) throw new Error('Paste the full signed agreement in step 1: its fingerprint is signed together with the terms.')
@@ -115,7 +117,7 @@ export default function NewAgreement() {
         client: roles.client as Address,
         reviewer: roles.reviewer as Address,
         developer: roles.developer as Address,
-        freelancer: roles.freelancer as Address,
+        freelancer: (payeeIsDeveloper ? roles.developer : roles.freelancer) as Address,
         target: roles.target as Address,
         agreementHash: document.hash,
         termsHash: published.hash,
@@ -228,11 +230,35 @@ export default function NewAgreement() {
           })} disabled={!!busy}>Use my wallet for empty roles</button>
         </p>
         <div className="grid two">
-          <div><label>Client: pays, can accept risks</label>{field(roles.client, (v) => setRoles({ ...roles, client: v }))}</div>
-          <div><label>Freelancer: gets paid</label>{field(roles.freelancer, (v) => setRoles({ ...roles, freelancer: v }))}</div>
-          <div><label>Reviewer (lawyer): approves the terms</label>{field(roles.reviewer, (v) => setRoles({ ...roles, reviewer: v }))}</div>
-          <div><label>Developer: wrote and fixes the contract</label>{field(roles.developer, (v) => setRoles({ ...roles, developer: v }))}</div>
+          <div><label>Lawyer (you): approves the terms</label>{field(roles.reviewer, (v) => setRoles({ ...roles, reviewer: v }))}</div>
+          <div><label>Client: pays into the escrow</label>{field(roles.client, (v) => setRoles({ ...roles, client: v }))}</div>
+          <div>
+            <label>Developer: builds, fixes the contract and gets paid</label>
+            {field(roles.developer, (v) => setRoles({ ...roles, developer: v, freelancer: payeeIsDeveloper ? v : roles.freelancer }))}
+          </div>
+          <div>
+            <label className="toggle" style={{ marginBottom: 4 }}>
+              <input
+                type="checkbox"
+                checked={payeeIsDeveloper}
+                onChange={(e) => {
+                  setPayeeIsDeveloper(e.target.checked)
+                  if (e.target.checked) setRoles({ ...roles, freelancer: roles.developer })
+                }}
+              />{' '}
+              The developer is the one who gets paid
+            </label>
+            {!payeeIsDeveloper && (
+              <>
+                <label>Payee: who the escrow pays out to</label>
+                {field(roles.freelancer, (v) => setRoles({ ...roles, freelancer: v }))}
+              </>
+            )}
+          </div>
         </div>
+        <p className="small muted" style={{ margin: 0 }}>
+          The client and payee must be the same addresses the contract was deployed with; Chainlink checks that too.
+        </p>
         <div>
           <label>Which smart contract should be compared with the agreement?</label>
           <ContractPicker value={roles.target} onChange={(v) => setRoles({ ...roles, target: v })} />
