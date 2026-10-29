@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const DIR = process.env.EVIDENCE_DIR || path.join(process.cwd(), 'data', 'evidence')
+const DIR = process.env.EVIDENCE_DIR?.trim() || path.join(process.cwd(), 'data', 'evidence')
 
 export async function GET(_request: Request, ctx: RouteContext<'/api/evidence/[hash]'>) {
   const { hash } = await ctx.params

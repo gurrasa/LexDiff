@@ -14,7 +14,7 @@ const creBinary = () => {
 }
 
 export async function POST(request: Request) {
-  if (process.env.ENABLE_LOCAL_CRE !== 'true') {
+  if (process.env.ENABLE_LOCAL_CRE?.trim() !== 'true') {
     return Response.json(
       { error: 'Running the check from the browser is disabled. Set ENABLE_LOCAL_CRE=true in web/.env.local, or run the command in a terminal.' },
       { status: 403 },

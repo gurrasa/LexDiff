@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   let verified: boolean | null = null
   let name: string | null = null
 
-  const key = process.env.ETHERSCAN_API_KEY
+  const key = process.env.ETHERSCAN_API_KEY?.trim()
   if (isContract && key) {
     try {
       const url = `https://api.etherscan.io/v2/api?chainid=11155111&module=contract&action=getsourcecode&address=${address}&apikey=${key}`

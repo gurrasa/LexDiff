@@ -6,7 +6,7 @@ import { DOMAIN, type PendingRegistration, type Registration, REGISTRATION_TYPES
 // Server-side store for registrations waiting for signatures (one JSON file per registration).
 // The id is the EIP-712 digest both parties sign, i.e. exactly what the registry checks on-chain.
 
-const DIR = process.env.REGISTRATIONS_DIR || path.join(process.cwd(), 'data', 'registrations')
+const DIR = process.env.REGISTRATIONS_DIR?.trim() || path.join(process.cwd(), 'data', 'registrations')
 
 export const registrationId = (r: Registration): Hex =>
   hashTypedData({ domain: DOMAIN(), types: REGISTRATION_TYPES, primaryType: 'Registration', message: r })

@@ -9,6 +9,15 @@
 set -euo pipefail
 cd /app
 
+# Values pasted into a dashboard often carry stray tabs, spaces or newlines: strip them.
+clean() { printf '%s' "${1:-}" | tr -d '[:space:]'; }
+CRE_ETH_PRIVATE_KEY=$(clean "${CRE_ETH_PRIVATE_KEY:-}"); CRE_ETH_PRIVATE_KEY=${CRE_ETH_PRIVATE_KEY#0x}
+ETHERSCAN_API_KEY_VALUE=$(clean "${ETHERSCAN_API_KEY_VALUE:-}")
+CRE_CREDENTIALS_B64=$(clean "${CRE_CREDENTIALS_B64:-}")
+CRE_CONTEXT_B64=$(clean "${CRE_CONTEXT_B64:-}")
+SEPOLIA_RPC_URL=$(clean "${SEPOLIA_RPC_URL:-}")
+DATA_DIR=$(clean "${DATA_DIR:-}")
+
 DATA=${DATA_DIR:-/data}
 mkdir -p "$DATA" /root/.cre
 

@@ -71,7 +71,8 @@ const CHECK_REQUESTED_TOPIC = toEventSelector('CheckRequested(uint256,address,by
 
 /** Fetches the terms JSON and returns it canonicalized, so formatting differences cannot change the hash. */
 const fetchTerms = (requester: HTTPSendRequester, termsURI: string): string => {
-	const response = requester.sendRequest({ url: termsURI, method: 'GET' }).result()
+	// The hash check makes the exact URI string irrelevant to integrity; tolerate stray whitespace in it.
+	const response = requester.sendRequest({ url: termsURI.trim(), method: 'GET' }).result()
 	if (!ok(response)) throw new Error(`terms fetch failed: HTTP ${response.statusCode}`)
 	return canonicalize(escrowTermsSchema.parse(JSON.parse(text(response))))
 }

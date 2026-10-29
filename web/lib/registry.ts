@@ -5,8 +5,9 @@ import { canonicalize } from './terms'
 
 export { registryAbi }
 
-export const REGISTRY_ADDRESS = (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS ?? '') as Address
-export const RPC_URL = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com'
+// Trimmed: values pasted into a hosting dashboard often carry stray whitespace.
+export const REGISTRY_ADDRESS = (process.env.NEXT_PUBLIC_REGISTRY_ADDRESS ?? '').trim() as Address
+export const RPC_URL = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL?.trim() || 'https://ethereum-sepolia-rpc.publicnode.com'
 export const EXPLORER = 'https://sepolia.etherscan.io'
 /** Forwarder used by `cre workflow simulate --broadcast` on Sepolia. Production uses the KeystoneForwarder. */
 export const SEPOLIA_MOCK_FORWARDER = '0x15fC6ae953E024d975e77382eEeC56A9101f9F88' as Address
@@ -198,7 +199,7 @@ export const registry = {
   getDecisions: (id: bigint, key: Hex) => read<Decision[]>('getDecisions', [id, key]),
   nonces: (signer: Address) => read<bigint>('nonces', [signer]),
   getEvents: async (id: bigint): Promise<AgreementEvent[]> => {
-    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK || '12019746')
+    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK?.trim() || '12019746')
     const logs = await publicClient.getContractEvents({
       address: REGISTRY_ADDRESS,
       abi: registryAbi,

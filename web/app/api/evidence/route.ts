@@ -7,7 +7,7 @@ import { canonicalize, escrowTermsSchema } from '@/lib/terms'
 // reviewed terms, CRE report documents and decision notes. Each item is stored as canonical JSON
 // under keccak256(canonical), which is exactly the hash anchored on-chain.
 
-const DIR = process.env.EVIDENCE_DIR || path.join(process.cwd(), 'data', 'evidence')
+const DIR = process.env.EVIDENCE_DIR?.trim() || path.join(process.cwd(), 'data', 'evidence')
 
 export async function POST(request: Request) {
   // Evidence documents are small JSON; refuse anything that could be used to fill the disk.
@@ -45,6 +45,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const base = process.env.PUBLIC_BASE_URL || new URL(request.url).origin
+  const base = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, '') || new URL(request.url).origin
   return Response.json({ hash, uri: `${base}/api/evidence/${hash}` })
 }

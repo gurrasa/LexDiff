@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   if (text.length > 100_000) return Response.json({ error: 'The agreement is too long for this demo (100,000 characters max).' }, { status: 413 })
 
   try {
-    client ??= new Anthropic()
+    client ??= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() })
     const response = await client.beta.messages.parse({
       model: 'claude-opus-5-5',
       max_tokens: 16000,
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       return Response.json({ error: `Claude API error: ${error.message}` }, { status: 502 })
     }
     // No key configured: the SDK throws a plain Error before any request is made.
-    if (!process.env.ANTHROPIC_API_KEY) {
+    if (!process.env.ANTHROPIC_API_KEY?.trim()) {
       return Response.json({ error: 'ANTHROPIC_API_KEY is not set on the server.' }, { status: 500 })
     }
     console.error('extract failed', error)

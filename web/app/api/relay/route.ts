@@ -28,7 +28,7 @@ const REASONS: Record<string, string> = {
 type Relayable = (typeof RELAYABLE)[number]
 
 const relayer = () => {
-  const key = process.env.RELAYER_PRIVATE_KEY
+  const key = process.env.RELAYER_PRIVATE_KEY?.trim()
   if (!key) return null
   return privateKeyToAccount((key.startsWith('0x') ? key : `0x${key}`) as Hex)
 }
