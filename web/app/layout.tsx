@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Newsreader } from 'next/font/google'
 import Link from 'next/link'
+import WalletButton from '@/components/WalletButton'
 import './globals.css'
 
 const sans = Geist({ variable: '--font-sans', subsets: ['latin'] })
@@ -21,9 +22,10 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             Lex<span>Diff</span>
           </Link>
           <nav>
-            <Link href="/">Agreements</Link>
+            <Link href="/">My agreements</Link>
             <Link href="/verify">Verify a record</Link>
-            <Link href="/new" className="button small">Check an agreement</Link>
+            <Link href="/new" className="button small">New agreement</Link>
+            <WalletButton />
           </nav>
         </header>
         <main>{children}</main>

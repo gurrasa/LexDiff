@@ -12,6 +12,7 @@ import {
   shortAddr,
   ZERO_BYTES32,
 } from '@/lib/registry'
+import ContractPicker from '@/components/ContractPicker'
 import { type EscrowTerms, escrowTermsSchema } from '@/lib/terms'
 
 const ZERO = '0x0000000000000000000000000000000000000000' as Address
@@ -233,13 +234,8 @@ export default function NewAgreement() {
           <div><label>Developer: wrote and fixes the contract</label>{field(roles.developer, (v) => setRoles({ ...roles, developer: v }))}</div>
         </div>
         <div>
-          <label>The smart contract that will hold the money</label>
-          {field(roles.target, (v) => setRoles({ ...roles, target: v }))}
-          {demoV1 && !roles.target && (
-            <button className="ghost small" style={{ marginTop: 6 }} onClick={() => { setRoles({ ...roles, target: demoV1 }); resetSignatures() }}>
-              Use the demo escrow ({shortAddr(demoV1)})
-            </button>
-          )}
+          <label>Which smart contract should be compared with the agreement?</label>
+          <ContractPicker value={roles.target} onChange={(v) => setRoles({ ...roles, target: v })} />
         </div>
         <details>
           <summary>Advanced: verifier and amendments</summary>

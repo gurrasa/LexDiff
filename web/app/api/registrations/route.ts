@@ -1,5 +1,5 @@
 import { isAddress } from 'viem'
-import { loadPending, registrationId, savePending } from '@/lib/pending'
+import { loadPending, pendingFor, registrationId, savePending } from '@/lib/pending'
 import { registrationFromJson, registrationToJson } from '@/lib/registry'
 
 /** Creates (or returns) a pending registration that the reviewer and client sign via /sign/[id]. */
@@ -23,4 +23,11 @@ export async function POST(request: Request) {
   const pending = { id, registration: registrationToJson(registration), signatures: {} }
   await savePending(pending)
   return Response.json(pending)
+}
+
+/** GET ?address=0x… lists signing requests waiting for that wallet. */
+export async function GET(request: Request) {
+  const address = new URL(request.url).searchParams.get('address') ?? ''
+  if (!isAddress(address)) return Response.json({ error: 'address required' }, { status: 400 })
+  return Response.json(await pendingFor(address))
 }

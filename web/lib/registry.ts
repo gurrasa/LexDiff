@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, custom, http, keccak256, toBytes, type Address, type Hex } from 'viem'
+import { createPublicClient, createWalletClient, custom, decodeEventLog, http, keccak256, toBytes, type Address, type Hex } from 'viem'
 import { sepolia } from 'viem/chains'
 import { registryAbi } from './registry-abi'
 import { canonicalize } from './terms'
@@ -289,6 +289,33 @@ export async function writeRegistry(functionName: string, args: readonly unknown
     args,
   } as never)
   return publicClient.waitForTransactionReceipt({ hash })
+}
+
+/**
+ * Submits an already-signed action (registration or decision). Uses the app's relayer when configured,
+ * so signers need no Sepolia ETH; otherwise sends it from the connected wallet.
+ */
+export async function submitSigned(
+  functionName: 'registerAgreement' | 'submitDecision',
+  args: readonly unknown[],
+): Promise<{ agreementId?: string }> {
+  const res = await fetch('/api/relay', {
+    method: 'POST',
+    body: JSON.stringify({ functionName, args }, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)),
+  })
+  if (res.status !== 501) {
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error)
+    return body
+  }
+  const receipt = await writeRegistry(functionName, args)
+  for (const log of receipt.logs) {
+    try {
+      const ev = decodeEventLog({ abi: registryAbi, data: log.data, topics: log.topics })
+      if (ev.eventName === 'AgreementRegistered') return { agreementId: (ev.args as { agreementId: bigint }).agreementId.toString() }
+    } catch {}
+  }
+  return {}
 }
 
 export const DOMAIN = () =>

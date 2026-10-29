@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
-import { type Address, decodeEventLog } from 'viem'
+import type { Address } from 'viem'
 import {
   type AgreementDocument,
   connectWallet,
@@ -13,12 +13,11 @@ import {
   type PendingRegistration,
   REGISTRATION_TYPES,
   registrationFromJson,
-  registryAbi,
   same,
   SEPOLIA_MOCK_FORWARDER,
   shortAddr,
+  submitSigned,
   watchAccount,
-  writeRegistry,
 } from '@/lib/registry'
 import type { EscrowTerms } from '@/lib/terms'
 
@@ -95,18 +94,11 @@ export default function SignView() {
 
   const register = () =>
     run('Registering on Sepolia', async () => {
-      const receipt = await writeRegistry('registerAgreement', [r, sigs.client, sigs.reviewer])
-      for (const log of receipt.logs) {
-        try {
-          const ev = decodeEventLog({ abi: registryAbi, data: log.data, topics: log.topics })
-          if (ev.eventName === 'AgreementRegistered') {
-            const agreementId = (ev.args as { agreementId: bigint }).agreementId.toString()
-            await fetch(`/api/registrations/${id}`, { method: 'POST', body: JSON.stringify({ agreementId }) })
-            router.push(`/agreements/${agreementId}`)
-            return
-          }
-        } catch {}
-      }
+      // Both signatures are already collected, so the app's relayer can submit it: nobody needs gas for this.
+      const { agreementId } = await submitSigned('registerAgreement', [r, sigs.client, sigs.reviewer])
+      if (!agreementId) throw new Error('Registered, but the agreement number could not be read. Check the agreements list.')
+      await fetch(`/api/registrations/${id}`, { method: 'POST', body: JSON.stringify({ agreementId }) })
+      router.push(`/agreements/${agreementId}`)
     })
 
   const party = (label: string, role: Role | null, address: Address) => (

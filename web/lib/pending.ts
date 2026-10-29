@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { hashTypedData, type Hex } from 'viem'
 import { DOMAIN, type PendingRegistration, type Registration, REGISTRATION_TYPES, registrationToJson } from './registry'
@@ -25,4 +25,17 @@ export async function loadPending(id: string): Promise<Stored | null> {
 export async function savePending(p: Stored) {
   await mkdir(DIR, { recursive: true })
   await writeFile(path.join(DIR, `${p.id}.json`), JSON.stringify(p, null, 2))
+}
+
+/** Pending registrations in which `address` is the client or the reviewer and has not signed yet. */
+export async function pendingFor(address: string): Promise<Stored[]> {
+  const files = await readdir(DIR).catch(() => [] as string[])
+  const all = await Promise.all(files.filter((f) => f.endsWith('.json')).map((f) => loadPending(f.slice(0, -5))))
+  const me = address.toLowerCase()
+  return all.filter((p): p is Stored => {
+    if (!p || p.agreementId) return false
+    const r = p.registration
+    if (Number(r.deadline) < Date.now() / 1000) return false
+    return (r.client.toLowerCase() === me && !p.signatures.client) || (r.reviewer.toLowerCase() === me && !p.signatures.reviewer)
+  })
 }

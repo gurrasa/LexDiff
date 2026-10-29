@@ -215,6 +215,8 @@ The app needs a persistent disk for its evidence store and signing requests.
    - `REGISTRATIONS_DIR=/data/registrations`
    - `PUBLIC_BASE_URL=https://<your-domain>`
    - `ENABLE_LOCAL_CRE=false`
+   - `RELAYER_PRIVATE_KEY`: a funded Sepolia key. It submits already-signed registrations and decisions, so lawyers and clients need no ETH; the signature still decides who acted.
+   - `ETHERSCAN_API_KEY`: lets the contract picker show whether a contract is verified.
 5. **Settings → Networking → Generate domain**, put it in `PUBLIC_BASE_URL`, and redeploy.
 
 The CRE workflow still runs from a laptop. Point it at the hosted store by setting `evidenceStoreUrl` in `cre/lexdiff-workflow/config.staging.json` to `https://<your-domain>/api/evidence`. Claude extraction is rate-limited per visitor (10 per hour).

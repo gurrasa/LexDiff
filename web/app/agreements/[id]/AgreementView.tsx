@@ -33,11 +33,13 @@ import {
   watchAccount,
   same,
   shortAddr,
+  submitSigned,
   VERIFICATION,
   Verification,
   writeRegistry,
   ZERO_BYTES32,
 } from '@/lib/registry'
+import ContractPicker from '@/components/ContractPicker'
 import type { EscrowTerms } from '@/lib/terms'
 
 type Details = { clause: string; expected: string; actual: string; level?: Level; method?: string }
@@ -182,7 +184,7 @@ export default function AgreementView() {
         message: { agreementId: id, findingKey: f.key, decision, evidenceHash: f.evidenceHash, noteHash, nonce, deadline },
       })
       setBusy('Recording your signed decision on Sepolia')
-      await writeRegistry('submitDecision', [id, f.key, decision, f.evidenceHash, noteHash, deadline, account, signature])
+      await submitSigned('submitDecision', [id, f.key, decision, f.evidenceHash, noteHash, deadline, account, signature])
       setNotes((n) => ({ ...n, [f.key]: '' }))
     })
 
@@ -322,8 +324,8 @@ export default function AgreementView() {
     if (stage.waitingFor === 'developer' && role === 'developer') {
       return (
         <div className="stack">
-          <label>Address of the corrected contract</label>
-          <input className="mono" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} placeholder="0x…" />
+          <label>Which corrected contract should replace {shortAddr(a.target)}?</label>
+          <ContractPicker value={newTarget} onChange={setNewTarget} />
           <button
             disabled={!!busy || !isAddress(newTarget)}
             onClick={() => run('Proposing the corrected contract', async () => void (await writeRegistry('proposeContract', [id, newTarget])))}
