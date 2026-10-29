@@ -199,6 +199,18 @@ The app needs a persistent disk for its evidence store and signing requests.
 
 The CRE workflow still runs from a laptop. Point it at the hosted store by setting `evidenceStoreUrl` in `cre/lexdiff-workflow/config.staging.json` to `https://<your-domain>/api/evidence`. Claude extraction is rate-limited per visitor (10 per hour).
 
+### Automatic checks (the local Chainlink "node")
+
+Every registration, accepted contract replacement and **Request a new Chainlink check** emits `CheckRequested` on Sepolia. In production the deployed CRE workflow's log trigger answers it. For the simulation, keep the watcher running:
+
+```bash
+cd cre/lexdiff-workflow
+node watch.ts                 # runs `cre workflow simulate` for every CheckRequested, from now on
+node watch.ts --dry-run       # only log what it would run
+```
+
+The agreement page shows *Waiting for Chainlink…* and refreshes itself when the report lands. Point `evidenceStoreUrl` in `config.staging.json` at the web app the parties use (e.g. the Railway URL), so the report is stored where they read it.
+
 ### 4. Finish the demo
 
 The agreement page shows where you are (*Agreement signed → Code checked → Decisions → Fix → Re-check → Ready*) and who has to act next. With one wallet holding every role, use **Act as** to switch between client, reviewer and developer.

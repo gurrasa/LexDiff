@@ -3,7 +3,7 @@
   "registryAddress": "0xbd1472dad8e08c2f66e3f5bb3876eb9f0c8085e9",
   "etherscanApiUrl": "https://api.etherscan.io/v2/api",
   "etherscanChainId": "11155111",
-  "evidenceStoreUrl": "http://localhost:3000/api/evidence",
+  "evidenceStoreUrl": "https://lexdiff-production.up.railway.app/api/evidence",
   "gasLimit": "10000000",
   "readFinalized": false
 }

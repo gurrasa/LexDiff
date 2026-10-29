@@ -57,6 +57,11 @@ export async function POST(request: Request) {
     if (error instanceof Anthropic.APIError) {
       return Response.json({ error: `Claude API error: ${error.message}` }, { status: 502 })
     }
-    throw error
+    // No key configured: the SDK throws a plain Error before any request is made.
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return Response.json({ error: 'ANTHROPIC_API_KEY is not set on the server.' }, { status: 500 })
+    }
+    console.error('extract failed', error)
+    return Response.json({ error: `Extraction failed: ${(error as Error).message}` }, { status: 500 })
   }
 }

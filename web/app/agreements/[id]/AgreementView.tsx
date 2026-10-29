@@ -126,6 +126,14 @@ export default function AgreementView() {
       .catch(() => {})
   }, [load])
 
+  // While a check is pending, poll the chain so the report shows up without a manual reload.
+  const waitingForChainlink = !!data && stageOf(data.agreement, data.findings, data.checks).waitingFor === 'chainlink'
+  useEffect(() => {
+    if (!waitingForChainlink) return
+    const timer = setInterval(() => load().catch(() => {}), 10_000)
+    return () => clearInterval(timer)
+  }, [waitingForChainlink, load])
+
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label)
     setError('')
@@ -261,12 +269,30 @@ export default function AgreementView() {
     if (stage.waitingFor === 'chainlink') {
       return (
         <div className="stack">
-          <div className="row">
-            <button onClick={runCheck} disabled={!!busy}>Run the Chainlink check</button>
-            <span className="small muted">Runs the real CRE workflow locally (simulation).</span>
-          </div>
+          <p className="small" style={{ margin: 0 }}>
+            ⏳ The request is on Sepolia (<code>CheckRequested</code>). The Chainlink CRE workflow picks it up on its own;
+            this page updates when the report arrives, usually within a couple of minutes.
+          </p>
+          {role && (
+            <div className="row">
+              <button
+                className="ghost"
+                disabled={!!busy}
+                onClick={() => run('Requesting a Chainlink check on Sepolia', async () => void (await writeRegistry('requestCheck', [id])))}
+              >
+                Request a new Chainlink check
+              </button>
+            </div>
+          )}
           <details>
-            <summary>Or run it in a terminal</summary>
+            <summary>Running the checker yourself (simulation)</summary>
+            <p className="small">
+              In this demo the workflow runs through the CRE CLI simulator. Keep <code>node watch.ts</code> running in{' '}
+              <code>cre/lexdiff-workflow</code> and it answers every request automatically. On a local install you can also run one check directly:
+            </p>
+            <div className="row">
+              <button onClick={runCheck} disabled={!!busy}>Run the check on this machine</button>
+            </div>
             <pre>{simulateCmd}</pre>
           </details>
         </div>

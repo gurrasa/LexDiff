@@ -6,7 +6,8 @@
   "scripts": {
     "setup": "bun x cre-setup",
     "typecheck": "tsc --noEmit",
-    "test": "node --test compare.test.ts"
+    "test": "node --test compare.test.ts",
+    "watch": "node watch.ts"
   },
   "dependencies": {
     "@chainlink/cre-sdk": "1.23.0",
