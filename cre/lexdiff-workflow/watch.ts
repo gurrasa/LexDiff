@@ -10,7 +10,7 @@
 //   node watch.ts --dry-run                               (log what would run, send nothing)
 
 import { spawn } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { createPublicClient, http, parseAbi } from 'viem'
@@ -19,12 +19,16 @@ import { sepolia } from 'viem/chains'
 const here = path.dirname(new URL(import.meta.url).pathname)
 const creDir = path.join(here, '..')
 const config = JSON.parse(readFileSync(path.join(here, 'config.staging.json'), 'utf8'))
-const env = Object.fromEntries(
-  readFileSync(path.join(creDir, '.env'), 'utf8')
-    .split('\n')
-    .filter((l) => /^\w+=/.test(l))
-    .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()]),
-)
+// cre/.env locally; plain environment variables in the cloud worker (which also writes cre/.env for the CLI).
+const envFile = path.join(creDir, '.env')
+const env: Record<string, string | undefined> = existsSync(envFile)
+  ? Object.fromEntries(
+      readFileSync(envFile, 'utf8')
+        .split('\n')
+        .filter((l) => /^\w+=/.test(l))
+        .map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()]),
+    )
+  : process.env
 const rpc = env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-rpc.publicnode.com'
 const registry = config.registryAddress as `0x${string}`
 const abi = parseAbi([
@@ -37,8 +41,16 @@ const MOCK_FORWARDER = '0x15fc6ae953e024d975e77382eeec56a9101f9f88'
 const client = createPublicClient({ chain: sepolia, transport: http(rpc) })
 
 const dryRun = process.argv.includes('--dry-run')
+// Where to start: --from / WATCH_FROM, else the block saved in STATE_FILE (so a restarted worker misses
+// nothing), else now.
+const stateFile = process.env.STATE_FILE
 const fromArg = process.argv.indexOf('--from')
-let next = fromArg > 0 ? BigInt(process.argv[fromArg + 1]) : (await client.getBlockNumber()) + 1n
+const saved = stateFile && existsSync(stateFile) ? BigInt(JSON.parse(readFileSync(stateFile, 'utf8')).next) : null
+let next =
+  fromArg > 0 ? BigInt(process.argv[fromArg + 1])
+  : process.env.WATCH_FROM ? BigInt(process.env.WATCH_FROM)
+  : saved ?? (await client.getBlockNumber()) + 1n
+const saveState = () => stateFile && writeFileSync(stateFile, JSON.stringify({ next: next.toString() }))
 const seen = new Set<string>()
 const queue: { agreementId: bigint; tx: string }[] = []
 let running = false
@@ -99,6 +111,7 @@ async function poll() {
         log(`CheckRequested for agreement #${ev.args.agreementId}`)
       }
       next = latest + 1n
+      saveState()
       void drain()
     }
   } catch (e) {

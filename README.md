@@ -199,17 +199,24 @@ The app needs a persistent disk for its evidence store and signing requests.
 
 The CRE workflow still runs from a laptop. Point it at the hosted store by setting `evidenceStoreUrl` in `cre/lexdiff-workflow/config.staging.json` to `https://<your-domain>/api/evidence`. Claude extraction is rate-limited per visitor (10 per hour).
 
-### Automatic checks (the local Chainlink "node")
+### Automatic checks (the CRE worker)
 
-Every registration, accepted contract replacement and **Request a new Chainlink check** emits `CheckRequested` on Sepolia. In production the deployed CRE workflow's log trigger answers it. For the simulation, keep the watcher running:
+Every registration, accepted contract replacement and **Request a new Chainlink check** emits `CheckRequested` on Sepolia. In production the deployed CRE workflow's log trigger answers it. This project's CRE account has no deploy access, so a worker answers it instead: it watches the registry and runs the workflow through the CRE CLI simulator (`--broadcast`) for each request. The agreement page shows *Waiting for Chainlink…* and refreshes itself when the report lands.
 
-```bash
-cd cre/lexdiff-workflow
-node watch.ts                 # runs `cre workflow simulate` for every CheckRequested, from now on
-node watch.ts --dry-run       # only log what it would run
-```
+**In the cloud (Railway, second service):**
 
-The agreement page shows *Waiting for Chainlink…* and refreshes itself when the report lands. Point `evidenceStoreUrl` in `config.staging.json` at the web app the parties use (e.g. the Railway URL), so the report is stored where they read it.
+1. In the same Railway project: **+ New → GitHub repo → LexDiff**. **Settings → Root Directory**: `cre`. Railway builds [cre/Dockerfile](cre/Dockerfile).
+2. **Volume** mounted at `/data`. It keeps the CRE login session and the last processed block.
+3. **Variables**:
+   - `CRE_ETH_PRIVATE_KEY`: no `0x`; pays for the report transactions.
+   - `ETHERSCAN_API_KEY_VALUE`
+   - `CRE_CREDENTIALS_B64`: `base64 < ~/.cre/cre.yaml` after `cre login`.
+   - `CRE_CONTEXT_B64`: `base64 < ~/.cre/context.yaml`.
+   - Optional: `SEPOLIA_RPC_URL`, `WATCH_FROM`.
+
+The worker uses `cre/lexdiff-workflow/config.staging.json`, so `evidenceStoreUrl` must point at the hosted web app.
+
+**Locally** (alternative): `cd cre/lexdiff-workflow && node watch.ts` (`--dry-run` only logs, `--from <block>` replays older requests).
 
 ### 4. Finish the demo
 
