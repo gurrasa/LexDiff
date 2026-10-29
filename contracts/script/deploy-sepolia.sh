@@ -52,6 +52,11 @@ verify() { # <address> <path:Name> [extra forge args…]
   echo "  could not verify $2 yet; retry later with: forge verify-contract $1 $2 --chain $CHAIN_ID ${*:3}" >&2
 }
 
+# The deploy block is where the registry's event history starts. When resuming with an existing
+# REGISTRY, keep the block recorded at its original deployment instead of "now".
+if [ -z "${DEPLOY_BLOCK:-}" ] && [ -n "${REGISTRY:-}" ] && [ -f "deployments/$CHAIN_ID.json" ]; then
+  DEPLOY_BLOCK=$(node -pe "require('./deployments/$CHAIN_ID.json').deployBlock")
+fi
 DEPLOY_BLOCK=${DEPLOY_BLOCK:-$(cast block-number --rpc-url "$RPC")}
 
 LOGIC=${LOGIC:-$(deploy LexDiffLogic "$(bytecode LexDiffLogic)")}

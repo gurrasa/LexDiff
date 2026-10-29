@@ -1,6 +1,6 @@
 {
   "chainId": 11155111,
-  "deployBlock": 12015707,
+  "deployBlock": 12015602,
   "registry": "0xbd1472dad8e08c2f66e3f5bb3876eb9f0c8085e9",
   "logic": "0xf498e0e9ee6875966e0589333c9014fc3113679f",
   "usdc": "0xe45c6148e724976ee3448bace05b054175b04e1f",

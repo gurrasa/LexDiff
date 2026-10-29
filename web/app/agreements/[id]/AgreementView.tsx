@@ -7,6 +7,7 @@ import { type Address, type Hex, isAddress } from 'viem'
 import { KIND_PLAIN, ROLES, type Role, rolesOf, roleNames, STATUS_PLAIN, STEPS, stageOf } from '@/lib/plain'
 import {
   type Agreement,
+  type AgreementEvent,
   type Check,
   connectWallet,
   DECISION_TYPES,
@@ -44,6 +45,7 @@ type Data = {
   history: Address[]
   decisions: Record<string, Decision[]>
   notes: Record<string, string>
+  chainEvents: AgreementEvent[]
 }
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -69,11 +71,12 @@ export default function AgreementView() {
   const [log, setLog] = useState('')
 
   const load = useCallback(async () => {
-    const [agreement, findings, checks, history] = await Promise.all([
+    const [agreement, findings, checks, history, chainEvents] = await Promise.all([
       registry.getAgreement(id),
       registry.getFindings(id),
       registry.getChecks(id),
       registry.getContractHistory(id),
+      registry.getEvents(id).catch(() => [] as AgreementEvent[]),
     ])
     const [terms, reports] = await Promise.all([
       getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI),
@@ -99,7 +102,7 @@ export default function AgreementView() {
         if (v) noteText[h] = v.note
       }),
     )
-    setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText })
+    setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText, chainEvents })
   }, [id])
 
   useEffect(() => {
@@ -172,7 +175,7 @@ export default function AgreementView() {
   if (error && !data) return <p className="error">{error}</p>
   if (!data) return <p className="muted">Loading agreement #{idParam} from Sepolia…</p>
 
-  const { agreement: a, terms, findings, checks, details, past, history, decisions, notes: noteText } = data
+  const { agreement: a, terms, findings, checks, details, past, history, decisions, notes: noteText, chainEvents } = data
   const myRoles = rolesOf(a, account)
   const role = actingAs && myRoles.includes(actingAs) ? actingAs : (myRoles[0] ?? null)
   const stage = stageOf(a, findings, checks)
@@ -182,6 +185,32 @@ export default function AgreementView() {
   const isMock = same(a.verifier.forwarder, '0x15fC6ae953E024d975e77382eEeC56A9101f9F88')
   const simulateCmd = `cd cre && cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \\\n  --non-interactive --trigger-index 0 --http-payload '{"agreementId":${idParam}}'`
   const clauseOf = (f: Finding) => (f.detailsHash === ZERO_BYTES32 ? past[f.key]?.at(-1)?.clause : details[f.detailsHash]?.clause) ?? 'Unknown term'
+
+  const downloadRecord = () => {
+    const record = {
+      schema: 'lexdiff/case-record@1',
+      exportedAt: new Date().toISOString(),
+      chainId: 11155111,
+      registry: process.env.NEXT_PUBLIC_REGISTRY_ADDRESS,
+      agreementId: id,
+      agreement: a,
+      contractHistory: history,
+      checks,
+      findings,
+      decisions,
+      events: chainEvents.map((event) => ({
+        ...event,
+        explorerUrl: `${EXPLORER}/tx/${event.transactionHash}`,
+      })),
+    }
+    const json = JSON.stringify(record, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `lexdiff-agreement-${idParam}-record.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   // Plain-language history of everything that happened.
   const events: { t: bigint; text: string; note?: string }[] = [
@@ -411,6 +440,7 @@ export default function AgreementView() {
       <div className="grid two" style={{ marginTop: '2rem' }}>
         <section>
           <h2>What happened</h2>
+          <button className="ghost small" onClick={downloadRecord}>Export case record</button>
           <ul className="timeline">
             {events.map((e, i) => (
               <li key={i}>
@@ -420,6 +450,17 @@ export default function AgreementView() {
               </li>
             ))}
           </ul>
+          <details>
+            <summary>Sepolia transaction trail</summary>
+            <ul className="timeline">
+              {chainEvents.map((event, index) => (
+                <li key={`${event.transactionHash}-${index}`}>
+                  <b>{event.eventName}</b> · block {event.blockNumber.toString()}{' '}
+                  <a href={`${EXPLORER}/tx/${event.transactionHash}`} target="_blank" rel="noreferrer">view transaction</a>
+                </li>
+              ))}
+            </ul>
+          </details>
           <p className="small muted">Every entry is signed or written by Chainlink on Sepolia, and nothing can be edited afterwards.</p>
         </section>
 
