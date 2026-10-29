@@ -8,7 +8,7 @@
 # Set SKIP_VERIFY=1 to skip Etherscan verification (e.g. on a local anvil).
 #
 # Resumable: pass addresses that already deployed and they are reused, e.g.
-#   LOGIC=0x… REGISTRY=0x… USDC=0x… V1=0x… ./script/deploy-sepolia.sh
+#   LOGIC=0x… REGISTRY=0x… USDC=0x… V1=0x… V2=0x… ./script/deploy-sepolia.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source .env
@@ -66,6 +66,9 @@ USDC=${USDC:-$(deploy MockUSDC "$(bytecode MockUSDC)")}
 ARGS=$(cast abi-encode "constructor(address,address,address,uint256)" "$USDC" "$CLIENT" "$FREELANCER" "$AMOUNT")
 V1=${V1:-$(deploy FreelanceEscrowV1 "$(bytecode FreelanceEscrowV1)${ARGS#0x}")}
 V2=${V2:-$(deploy FreelanceEscrowV2 "$(bytecode FreelanceEscrowV2)${ARGS#0x}")}
+# Second demo agreement (agreements/website-redesign.md): 2,500 USDC
+WEBSITE_ARGS=$(cast abi-encode "constructor(address,address,address,uint256)" "$USDC" "$CLIENT" "$FREELANCER" 2500000000)
+WEBSITE=${WEBSITE:-$(deploy WebsiteEscrow "$(bytecode WebsiteEscrow)${WEBSITE_ARGS#0x}")}
 
 mkdir -p deployments
 cat > "deployments/$CHAIN_ID.json" <<JSON
@@ -77,6 +80,7 @@ cat > "deployments/$CHAIN_ID.json" <<JSON
   "usdc": "$USDC",
   "escrowV1": "$V1",
   "escrowV2": "$V2",
+  "websiteEscrow": "$WEBSITE",
   "client": "$CLIENT",
   "freelancer": "$FREELANCER"
 }
@@ -87,6 +91,7 @@ verify "$REGISTRY" src/LexDiffRegistry.sol:LexDiffRegistry --libraries "src/LexD
 verify "$USDC" src/demo/MockUSDC.sol:MockUSDC
 verify "$V1" src/demo/FreelanceEscrowV1.sol:FreelanceEscrowV1 --constructor-args "$ARGS"
 verify "$V2" src/demo/FreelanceEscrowV2.sol:FreelanceEscrowV2 --constructor-args "$ARGS"
+verify "$WEBSITE" src/demo/WebsiteEscrow.sol:WebsiteEscrow --constructor-args "$WEBSITE_ARGS"
 
 echo
 echo "LexDiffRegistry    $REGISTRY"
@@ -94,6 +99,7 @@ echo "LexDiffLogic       $LOGIC"
 echo "MockUSDC           $USDC"
 echo "FreelanceEscrowV1  $V1"
 echo "FreelanceEscrowV2  $V2"
+echo "WebsiteEscrow      $WEBSITE"
 echo
 echo "Saved to contracts/deployments/$CHAIN_ID.json"
 echo "Next: set NEXT_PUBLIC_REGISTRY_ADDRESS=$REGISTRY in web/.env.local and registryAddress in cre/lexdiff-workflow/config.staging.json"

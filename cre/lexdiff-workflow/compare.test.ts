@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { compare, detailsHash, findingKey, Kind, resolveGetters } from './compare.ts'
+import { compare, coverage, detailsHash, findingKey, Kind, resolveGetters } from './compare.ts'
 import { buildReport } from './report.ts'
 import { analyzeSource, privilegedFunctions, stripComments } from './source-analysis.ts'
 import { canonicalize, escrowTermsSchema, termsHash } from './terms.ts'
@@ -144,10 +144,44 @@ test('report document: only hashes reach the chain, details are recoverable off-
 	const deadline = findings.find((f) => f.clause === 'Delivery deadline')!
 	assert.equal(deadline.detailsHash, detailsHash('Delivery deadline', '30 days', '3 days'))
 
-	const a = buildReport(1n, TOKEN, termsHash(terms), analysis, onchain(3n), findings)
-	const b = buildReport(1n, TOKEN, termsHash(terms), analysis, onchain(3n), [...findings])
+	const a = buildReport(1n, TOKEN, termsHash(terms), terms, analysis, onchain(3n), findings)
+	const b = buildReport(1n, TOKEN, termsHash(terms), terms, analysis, onchain(3n), [...findings])
 	assert.equal(a.hash, b.hash)
 	const doc = JSON.parse(a.canonical)
 	assert.equal(doc.findings.length, findings.length)
 	assert.equal(doc.onchain.deliveryPeriod, String(3n * 86400n))
+})
+
+test('every finding says how it was checked, and unchecked terms are listed', () => {
+	const findings = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
+	const f = byClause(findings)
+	assert.equal(f['Delivery deadline'].level, 'value')
+	assert.equal(f['Refund if deadline is missed'].level, 'structural')
+	assert.equal(f['Admin power: withdraw-funds'].level, 'structural')
+	for (const x of findings) assert.ok(x.method.length > 0, x.clause)
+
+	const c = coverage(terms, findings)
+	assert.equal(c.checked, 7)
+	assert.equal(c.byLevel.value + c.byLevel.structural, findings.length)
+	assert.equal(c.unchecked.length, terms.payoutConditions.length)
+	assert.match(c.unchecked[0].reason, /not checked automatically/)
+})
+
+test('second agreement: granted pause is a match, unlisted deadline setter is a hidden power', () => {
+	const website = escrowTermsSchema.parse({
+		...JSON.parse(read('agreements/website-redesign.terms.example.json')),
+		parties: { client: { name: 'Nordic', wallet: CLIENT }, freelancer: { name: 'Pixel', wallet: FREELANCER } },
+	})
+	const analysis = analysisFor('WebsiteEscrow.sol', 'WebsiteEscrow', true)
+	const f = byClause(
+		compare(website, analysis, { ...onchain(14n), amount: 2_500_000_000n, reviewPeriod: 2n * 86400n }),
+	)
+	assert.equal(f['Escrow amount'].kind, Kind.Match)
+	assert.equal(f['Delivery deadline'].kind, Kind.Match)
+	assert.equal(f['Client review period'].kind, Kind.Mismatch)
+	assert.equal(f['Client review period'].actual, '2 days')
+	assert.equal(f['Refund if deadline is missed'].kind, Kind.Match)
+	assert.equal(f['Admin power: pause'].kind, Kind.Match)
+	assert.equal(f['Admin power: modify-terms'].kind, Kind.HiddenPower)
+	assert.match(f['Admin power: modify-terms'].actual, /setDeliveryPeriod/)
 })

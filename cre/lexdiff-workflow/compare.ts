@@ -8,6 +8,13 @@ import { canonicalize, type EscrowTerms } from './terms.ts'
 export const Kind = { Match: 0, Mismatch: 1, Missing: 2, HiddenPower: 3 } as const
 export type Kind = (typeof Kind)[keyof typeof Kind]
 
+/**
+ * How a finding was established. Kept separate from Kind: a structural Match is weaker evidence than a value Match.
+ *   value      – read from the deployed contract's state on-chain
+ *   structural – derived from the Etherscan-verified source code, not by executing it
+ */
+export type Level = 'value' | 'structural'
+
 export type Finding = {
 	key: `0x${string}`
 	kind: Kind
@@ -16,6 +23,15 @@ export type Finding = {
 	actual: string
 	/** keccak256 of canonical {clause, expected, actual}: the only part of the details that goes on-chain */
 	detailsHash: `0x${string}`
+	level: Level
+	method: string
+}
+
+/** Terms the workflow does not check automatically. Reported so nothing unchecked looks like a Match. */
+export type Coverage = {
+	checked: number
+	byLevel: Record<Level, number>
+	unchecked: { term: string; text: string; reason: string }[]
 }
 
 /** Terms that are checked against a getter on the deployed contract. */
@@ -83,8 +99,13 @@ const REFUND_NAMES = /refund|reclaim|cancel|withdrawdeposit|clawback/i
 
 export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: OnchainValues): Finding[] => {
 	const findings: Finding[] = []
+	let level: Level = 'value'
+	let method = ''
 	const push = (id: string, kind: Kind, clause: string, expected: string, actual: string) =>
-		findings.push({ key: findingKey(id), kind, clause, expected, actual, detailsHash: detailsHash(clause, expected, actual) })
+		findings.push({ key: findingKey(id), kind, clause, expected, actual, detailsHash: detailsHash(clause, expected, actual), level, method })
+
+	level = 'value'
+	method = 'Read from the deployed contract on Sepolia (getter found in the verified ABI)'
 
 	const addressTerm = (id: GetterTerm, clause: string, expected: string, actual: string | undefined) => {
 		if (actual === undefined) return push(`term:${id}`, Kind.Missing, clause, expected, 'no getter in contract')
@@ -131,6 +152,8 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 	durationTerm('deliveryPeriod', 'Delivery deadline', terms.deadlines.deliveryPeriodDays, onchain.deliveryPeriod)
 	durationTerm('reviewPeriod', 'Client review period', terms.deadlines.reviewPeriodDays, onchain.reviewPeriod)
 
+	level = 'structural'
+	method = 'Analysed the verified source: refund function exists, checks the deadline and pays the client (not executed)'
 	if (terms.refund.onMissedDeadline) {
 		const refundFn = analysis.abi.find(
 			(f) => REFUND_NAMES.test(f.name) && f.stateMutability !== 'view' && f.stateMutability !== 'pure',
@@ -155,6 +178,8 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 	}
 
 	// Privileged functions the agreement does not grant are hidden powers.
+	level = 'structural'
+	method = 'Analysed the verified source for functions only the owner/admin can call'
 	const granted = new Set(terms.adminPowers.map((p) => p.category))
 	for (const fn of analysis.privileged) {
 		const declared = granted.has(fn.category)
@@ -169,3 +194,22 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 
 	return findings
 }
+
+export const coverage = (terms: EscrowTerms, findings: Finding[]): Coverage => ({
+	// Agreement terms that were compared; admin-power findings come from the code, not from a term.
+	checked: findings.filter((f) => !f.clause.startsWith('Admin power')).length,
+	byLevel: {
+		value: findings.filter((f) => f.level === 'value').length,
+		structural: findings.filter((f) => f.level === 'structural').length,
+	},
+	unchecked: [
+		...terms.payoutConditions.map((text) => ({
+			term: 'Payout condition',
+			text,
+			reason: 'Shown for human review; payout logic is not checked automatically yet.',
+		})),
+		...(terms.refund.onMissedDeadline
+			? []
+			: [{ term: 'Refund', text: 'The agreement gives no refund on a missed deadline.', reason: 'Nothing to check.' }]),
+	],
+})

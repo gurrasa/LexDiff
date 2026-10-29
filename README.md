@@ -82,8 +82,25 @@ flowchart LR
 |---|---|
 | Client, freelancer, token, amount | A getter found by name and type in the verified ABI, read at the last finalized block |
 | Delivery deadline, review period | Same, compared in seconds (`days × 86400`) |
-| Refund if deadline is missed | A state-changing function named like `refund` / `reclaim` / `cancel` in the verified ABI |
+| Refund if deadline is missed | A refund-like function in the verified source that checks the deadline (`block.timestamp`) and transfers to the client. Structural: read, not executed. |
 | Admin powers | Static analysis of the verified source: external, state-changing functions gated by `onlyOwner`-style modifiers or `msg.sender == owner` checks, grouped by effect (`withdraw-funds`, `pause`, `upgrade`, `modify-terms`, `destroy`). Anything the agreement does not grant is a 🚩 hidden power. |
+
+### Verification levels and coverage
+
+Every finding states **how** it was established:
+
+- 🔢 **Value**: read from the deployed contract on Sepolia (amount, deadlines, parties, token).
+- 📄 **Structural**: derived from the Etherscan-verified source code (refund logic, admin powers). The code is read, not executed.
+
+Each report also lists the terms that were **not** checked automatically (today: payout conditions), so nothing unchecked ever looks like a ✅ Match.
+
+### Independent verification
+
+**Export case record** on an agreement page downloads a self-contained JSON: the on-chain state, every transaction, and the off-chain documents (terms, reports, notes). The **Verify a record** page (`/verify`) re-checks it entirely in the browser against the file and a public Sepolia node, never LexDiff's own server. Each assertion comes back as **Integrity valid**, **Integrity invalid** or **Unable to verify**; tampering with any document or status is detected. It checks integrity only, never legal validity.
+
+### A second agreement
+
+[agreements/website-redesign.md](agreements/website-redesign.md) + [WebsiteEscrow.sol](contracts/src/demo/WebsiteEscrow.sol) show that nothing is hard-coded: different amounts and deadlines, a review period that is wrong (2 days vs 5), a pause power the agreement **grants** (✅ Match), and a deadline setter it does not (🚩 Hidden power). On `/new`, use **Second demo: website redesign**.
 
 ## The demo
 
@@ -176,7 +193,7 @@ The agreement page shows where you are (*Agreement signed → Code checked → D
 
 ```bash
 cd contracts && forge test                       # 17 tests: signatures, roles, verifier pinning, snapshots, disputes, amendments
-cd cre/lexdiff-workflow && npm test              # 10 tests: comparison, source analysis, report hashing on the real demo contracts
+cd cre/lexdiff-workflow && npm test              # 13 tests: comparison, refund structure, levels/coverage, second agreement, report hashing
 cd cre/lexdiff-workflow && bun x cre-compile main.ts /tmp/lexdiff.wasm   # WASM build check
 ```
 
@@ -191,16 +208,15 @@ cd cre/lexdiff-workflow && bun x cre-compile main.ts /tmp/lexdiff.wasm   # WASM 
 - Sepolia testnet only. No real funds.
 - **The simulation forwarder is a mock.** `cre workflow simulate` delivers reports through the MockKeystoneForwarder, which does not verify DON signatures. In the demo, anyone could call it with a fabricated report for an agreement that uses it. Production agreements should name the KeystoneForwarder and pin the workflow owner and ID; the registry already enforces both.
 - One contract type (escrow). Getter discovery is name-based; a term hidden behind an unconventional name shows up as ❌ Missing, which is the safe failure.
-- The refund check is structural: it finds the function, it doesn't execute it.
+- The refund check is structural: it reads the function's code (deadline check, transfer to client), it doesn't execute it.
+- Payout conditions are extracted and listed as "not checked automatically" for human review.
 - Source analysis covers the contract's own file. Privileged functions inherited from other files are not analysed yet.
-- Payout conditions are extracted and shown for human review, but not yet checked automatically.
 - The evidence store is the web app's local disk. Its integrity comes from the on-chain hashes; its availability does not. For hosting, swap it for persistent storage or IPFS.
 
 ## Future work
 
 - Behavioral refund check (simulate `refund()` after the deadline with state overrides).
 - Continuous monitoring: re-check upgradeable contracts on a cron trigger and alert if the code changes after signing.
-- Evidence export (`evidence.json`) with transaction links per event.
 - More contract types (vesting, leases, tokenized assets).
 - Multi-party sign-off across organizations (the registry already accepts ERC-1271 smart-account signatures).
 

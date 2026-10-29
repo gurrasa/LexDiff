@@ -190,7 +190,7 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	for (const f of findings) runtime.log(`  [${['MATCH', 'MISMATCH', 'MISSING', 'HIDDEN'][f.kind]}] ${f.clause}: expected ${f.expected}, actual ${f.actual}`)
 
 	// 6. Full report off-chain (it names vulnerabilities); only hashes go on-chain.
-	const report = buildReport(agreementId, a.target, a.termsHash, analysis, onchain, findings)
+	const report = buildReport(agreementId, a.target, a.termsHash, terms, analysis, onchain, findings)
 	http
 		.sendRequest(runtime, storeReport, consensusIdenticalAggregation<string>())(
 			config.evidenceStoreUrl,

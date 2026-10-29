@@ -101,11 +101,34 @@ export type Registration = {
 }
 
 /** Off-chain report written by the CRE workflow; its hash is anchored in Check.reportHash. */
+export type Level = 'value' | 'structural'
+
 export type ReportDocument = {
-  schema: 'lexdiff/report@1'
+  schema: 'lexdiff/report@1' | 'lexdiff/report@2'
   contractName: string
   onchain: Record<string, string>
-  findings: { key: Hex; kind: number; clause: string; expected: string; actual: string; detailsHash: Hex }[]
+  findings: {
+    key: Hex
+    kind: number
+    clause: string
+    expected: string
+    actual: string
+    detailsHash: Hex
+    level?: Level // @2
+    method?: string // @2
+  }[]
+  /** @2: what was and was not checked, so nothing unchecked looks like a Match */
+  coverage?: {
+    checked: number
+    byLevel: Record<Level, number>
+    unchecked: { term: string; text: string; reason: string }[]
+  }
+}
+
+/** How a finding was established (F06). */
+export const LEVEL_PLAIN: Record<Level, { icon: string; label: string }> = {
+  value: { icon: '🔢', label: 'Read from the contract on Sepolia' },
+  structural: { icon: '📄', label: 'From the verified source code (not executed)' },
 }
 
 const read = <T>(functionName: string, args: readonly unknown[] = []) =>

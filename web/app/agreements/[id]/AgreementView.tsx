@@ -21,6 +21,8 @@ import {
   KIND,
   noteValue,
   putEvidence,
+  LEVEL_PLAIN,
+  type Level,
   type ReportDocument,
   registry,
   same,
@@ -31,7 +33,7 @@ import {
 } from '@/lib/registry'
 import type { EscrowTerms } from '@/lib/terms'
 
-type Details = { clause: string; expected: string; actual: string }
+type Details = { clause: string; expected: string; actual: string; level?: Level; method?: string }
 type Past = Details & { kind: number; check: number }
 
 type Data = {
@@ -181,14 +183,23 @@ export default function AgreementView() {
   const stage = stageOf(a, findings, checks)
   const issues = findings.filter((f) => f.kind !== 0 || f.status === 4).sort((x, y) => x.status - y.status)
   const matches = findings.filter((f) => f.kind === 0 && f.status !== 4)
+  const coverage = data.reports.at(-1)?.coverage
   const pending = a.pendingTarget !== ZERO
   const isMock = same(a.verifier.forwarder, '0x15fC6ae953E024d975e77382eEeC56A9101f9F88')
   const simulateCmd = `cd cre && cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \\\n  --non-interactive --trigger-index 0 --http-payload '{"agreementId":${idParam}}'`
   const clauseOf = (f: Finding) => (f.detailsHash === ZERO_BYTES32 ? past[f.key]?.at(-1)?.clause : details[f.detailsHash]?.clause) ?? 'Unknown term'
 
   const downloadRecord = () => {
+    // Self-contained: the off-chain documents travel with the record, so /verify (or anyone) can
+    // re-hash them against the on-chain anchors without trusting LexDiff's evidence store.
+    const documents: Record<string, unknown> = {}
+    if (terms) documents[a.termsHash] = terms
+    checks.forEach((c, i) => {
+      if (data.reports[i]) documents[c.reportHash] = data.reports[i]
+    })
+    for (const [hash, note] of Object.entries(noteText)) documents[hash] = noteValue(note)
     const record = {
-      schema: 'lexdiff/case-record@1',
+      schema: 'lexdiff/case-record@2',
       exportedAt: new Date().toISOString(),
       chainId: 11155111,
       registry: process.env.NEXT_PUBLIC_REGISTRY_ADDRESS,
@@ -202,6 +213,12 @@ export default function AgreementView() {
         ...event,
         explorerUrl: `${EXPLORER}/tx/${event.transactionHash}`,
       })),
+      documents,
+      limitations: [
+        'Hashes prove these documents are the ones anchored on-chain, not that their content is true or legally valid.',
+        'A wallet signature proves control of a key, not the legal identity or authority of the signer.',
+        'Structural checks read the verified source code; they do not execute it.',
+      ],
     }
     const json = JSON.stringify(record, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
@@ -352,6 +369,29 @@ export default function AgreementView() {
         </label>
       </div>
       {checks.length === 0 && <p className="muted">Nothing yet. The contract has not been checked.</p>}
+      {coverage && (
+        <section className="panel small" style={{ marginTop: '1rem' }}>
+          <b>What was checked.</b> {coverage.checked} agreement terms compared: {coverage.byLevel.value}{' '}
+          {LEVEL_PLAIN.value.icon} by reading the contract&apos;s values on Sepolia, {coverage.byLevel.structural}{' '}
+          {LEVEL_PLAIN.structural.icon} by analysing its verified source code.
+          {coverage.unchecked.length > 0 ? (
+            <>
+              <div style={{ marginTop: '0.5rem' }}>
+                <b>Not checked automatically ({coverage.unchecked.length})</b>: these need a human to review.
+              </div>
+              <ul style={{ margin: '0.25rem 0 0' }}>
+                {coverage.unchecked.map((u, i) => (
+                  <li key={i}>
+                    <span className="badge tone-muted">{u.term}</span> {u.text} <span className="muted">· {u.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <div>Every term in the agreement was checked.</div>
+          )}
+        </section>
+      )}
       {checks.length > 0 && issues.length === 0 && <p className="notice">No issues: the contract matches every checked term.</p>}
 
       <div className="stack" style={{ marginTop: '1rem' }}>
@@ -376,6 +416,11 @@ export default function AgreementView() {
               </div>
               <div className="small muted">{f.status === 4 ? 'Was: ' + KIND_PLAIN[before?.kind ?? f.kind].toLowerCase() : KIND_PLAIN[f.kind]}</div>
 
+              {(d?.level ?? before?.level) && (
+                <div className="small" style={{ marginTop: 4 }} title={d?.method ?? before?.method}>
+                  {LEVEL_PLAIN[(d?.level ?? before?.level)!].icon} {LEVEL_PLAIN[(d?.level ?? before?.level)!].label}
+                </div>
+              )}
               <div className="says">
                 <div><span>The agreement says</span>{d?.expected ?? before?.expected ?? '—'}</div>
                 {f.status === 4 && before ? (
@@ -414,6 +459,7 @@ export default function AgreementView() {
               {showEvidence && (
                 <div className="evidence stack" style={{ marginTop: '0.75rem' }}>
                   <div>Evidence hash (what signatures cover): {f.evidenceHash}</div>
+                  {(d?.method ?? before?.method) && <div>How it was checked: {d?.method ?? before?.method}</div>}
                   <div>Details hash on-chain: {f.detailsHash} {d && '✓ matches the off-chain report'}</div>
                   <div>First found in check #{f.firstCheck}, last checked in #{f.lastCheck}{f.resolvedInCheck ? `, fixed in #${f.resolvedInCheck}` : ''}</div>
                   {ds.map((x, i) => <div key={i}>Signature by {x.signer}: {x.signature.slice(0, 42)}…</div>)}
@@ -430,7 +476,12 @@ export default function AgreementView() {
           <ul className="small">
             {matches.map((f) => {
               const d = details[f.detailsHash]
-              return <li key={f.key}><b>{d?.clause ?? 'Term'}</b>: {d?.expected ?? '—'}</li>
+              return (
+                <li key={f.key}>
+                  <b>{d?.clause ?? 'Term'}</b>: {d?.expected ?? '—'}{' '}
+                  {d?.level && <span className="muted" title={d.method}>{LEVEL_PLAIN[d.level].icon}</span>}
+                </li>
+              )
             })}
           </ul>
         </details>

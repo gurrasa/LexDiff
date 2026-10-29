@@ -30,11 +30,18 @@ export default function NewAgreement() {
   const [registration, setRegistration] = useState<Registration | null>(null)
   const [sigs, setSigs] = useState<{ client?: Hex; reviewer?: Hex }>({})
   const [demoV1, setDemoV1] = useState<string | null>(null)
+  const [demoWebsite, setDemoWebsite] = useState<string | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch('/api/demo').then((r) => r.json()).then((d) => setDemoV1(d.escrowV1)).catch(() => {})
+    fetch('/api/demo')
+      .then((r) => r.json())
+      .then((d) => {
+        setDemoV1(d.escrowV1)
+        setDemoWebsite(d.websiteEscrow)
+      })
+      .catch(() => {})
   }, [])
 
   const run = async (label: string, fn: () => Promise<void>) => {
@@ -66,18 +73,19 @@ export default function NewAgreement() {
 
   const extract = () => run('Claude is reading the agreement (10–30 seconds)', () => extractFrom(text))
 
-  const fillDemo = () =>
+  /** `name` is a file stem in public/demo: <name>.md (agreement) and <name>.terms.json (reviewed fallback). */
+  const fillDemo = (name: string, target: string | null) =>
     run('Setting up the demo', async () => {
-      const demo = await (await fetch('/demo/freelance-escrow.md')).text()
+      const demo = await (await fetch(`/demo/${name}.md`)).text()
       setText(demo)
       const { account } = await connectWallet()
-      setRoles({ client: account, freelancer: account, reviewer: account, developer: account, target: demoV1 ?? '' })
+      setRoles({ client: account, freelancer: account, reviewer: account, developer: account, target: target ?? '' })
       setBusy('Claude is reading the agreement (10–30 seconds)')
       try {
         await extractFrom(demo)
       } catch {
         // No Claude key: fall back to the reviewed example terms.
-        setTermsJson(await (await fetch('/demo/freelance-escrow.terms.json')).text())
+        setTermsJson(await (await fetch(`/demo/${name}.terms.json`)).text())
       }
     })
 
@@ -179,7 +187,12 @@ export default function NewAgreement() {
             Four steps: paste the agreement, check what Claude understood, say who is involved, and sign.
           </p>
         </div>
-        <button onClick={fillDemo} disabled={!!busy}>Fill in the demo for me</button>
+        <div className="stack" style={{ textAlign: 'right' }}>
+          <button onClick={() => fillDemo('freelance-escrow', demoV1)} disabled={!!busy}>Fill in the demo for me</button>
+          <button className="ghost small" onClick={() => fillDemo('website-redesign', demoWebsite)} disabled={!!busy}>
+            Second demo: website redesign
+          </button>
+        </div>
       </div>
       {error && <p className="error">{error}</p>}
       {busy && <p className="notice">{busy}…</p>}

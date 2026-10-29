@@ -1,0 +1,25 @@
+{
+  "schema": "lexdiff/escrow-terms@1",
+  "title": "Website Redesign Escrow Agreement",
+  "parties": {
+    "client": { "name": "Nordic Bakery AB", "wallet": "0x0000000000000000000000000000000000000000" },
+    "freelancer": { "name": "Pixel Studio HB", "wallet": "0x0000000000000000000000000000000000000000" }
+  },
+  "payment": { "tokenSymbol": "USDC", "tokenAddress": "", "amount": "2500", "decimals": 6 },
+  "deadlines": { "deliveryPeriodDays": 14, "reviewPeriodDays": 5 },
+  "payoutConditions": [
+    "Released to the Designer when the Client approves the work",
+    "Released automatically when the 5-day review period ends without a response"
+  ],
+  "refund": { "onMissedDeadline": true, "description": "Full refund to the Client if the work is not delivered within 14 days of the deposit" },
+  "adminPowers": [
+    { "category": "pause", "description": "The platform operator may pause the escrow while a dispute is being resolved" }
+  ],
+  "sourceClauses": [
+    { "term": "payment.amount", "quote": "The fee is 2,500 USDC" },
+    { "term": "deadlines.deliveryPeriodDays", "quote": "The Designer shall deliver within fourteen (14) days of the deposit." },
+    { "term": "deadlines.reviewPeriodDays", "quote": "The Client has five (5) days from delivery to review the work." },
+    { "term": "refund.onMissedDeadline", "quote": "the Client is entitled to a full refund" },
+    { "term": "adminPowers", "quote": "The escrow platform operator may pause the escrow while a dispute between the parties is being resolved." }
+  ]
+}
