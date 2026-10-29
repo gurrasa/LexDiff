@@ -6,7 +6,7 @@
 // trigger listens to the same event.
 //
 //   cd cre/lexdiff-workflow && node watch.ts            (watch from now on)
-//   node watch.ts --from 12015602                         (also process older requests)
+//   node watch.ts --from 12019746                         (also process older requests)
 //   node watch.ts --dry-run                               (log what would run, send nothing)
 
 import { spawn } from 'node:child_process'
@@ -34,7 +34,7 @@ const registry = config.registryAddress as `0x${string}`
 const abi = parseAbi([
   'event CheckRequested(uint256 indexed agreementId, address indexed target, bytes32 termsHash)',
   'struct Verifier { address forwarder; address workflowOwner; bytes32 workflowId; }',
-  'struct Agreement { address client; address reviewer; address developer; address target; address pendingTarget; bytes32 termsHash; string termsURI; Verifier verifier; uint256 supersedes; uint256 supersededBy; uint64 createdAt; }',
+  'struct Agreement { address client; address reviewer; address developer; address freelancer; address target; address pendingTarget; bytes32 agreementHash; bytes32 termsHash; string termsURI; Verifier verifier; uint256 supersedes; uint256 supersededBy; uint64 createdAt; }',
   'function getAgreement(uint256 agreementId) view returns (Agreement)',
 ])
 const MOCK_FORWARDER = '0x15fc6ae953e024d975e77382eeec56a9101f9f88'

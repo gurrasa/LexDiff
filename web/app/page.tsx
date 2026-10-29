@@ -106,7 +106,7 @@ export default function Home() {
         <li><b>Decisions.</b> For each problem the lawyer can require a fix, or the client can knowingly accept the risk. Anyone involved can confirm they saw it, or disagree.</li>
         <li><b>Fix.</b> The developer deploys a corrected contract; the client, who holds the money, approves the switch.</li>
         <li><b>Re-check.</b> Chainlink checks again. Only Chainlink can mark a problem as fixed; saying so is not enough.</li>
-        <li><b>Ready.</b> Every problem is fixed or knowingly accepted, with a signed record if anything is disputed later.</li>
+        <li><b>Decided.</b> Every failing property is either verified as fixed or has a signed decision. An accepted risk still fails; the record shows it.</li>
       </ol>
 
       <h2>Who is involved</h2>

@@ -22,8 +22,30 @@ export const KIND = [
   { label: 'Hidden power', icon: '🚩', tone: 'bad' },
 ] as const
 
-export const STATUS = ['—', 'Open', 'Accepted risk', 'Remediation required', 'Resolved'] as const
-export const STATUS_TONE = ['muted', 'bad', 'warn', 'info', 'ok'] as const
+// The three independent dimensions of a finding (ILexDiff.Verification / Remediation / Disposition).
+export const Verification = { NotChecked: 0, Pass: 1, Fail: 2, Inconclusive: 3 } as const
+export const Remediation = { None: 0, Required: 1, FixProposed: 2, FixVerified: 3, Reopened: 4 } as const
+export const Disposition = { Undecided: 0, Accepted: 1, Rejected: 2, Disputed: 3 } as const
+
+export const VERIFICATION = [
+  { label: 'Not checked', tone: 'muted' },
+  { label: 'Pass', tone: 'ok' },
+  { label: 'Fail', tone: 'bad' },
+  { label: 'Inconclusive', tone: 'warn' },
+] as const
+export const REMEDIATION = [
+  { label: 'No fix requested', tone: 'muted' },
+  { label: 'Fix required', tone: 'info' },
+  { label: 'Fix proposed', tone: 'info' },
+  { label: 'Fix verified', tone: 'ok' },
+  { label: 'Fix reopened', tone: 'bad' },
+] as const
+export const DISPOSITION = [
+  { label: 'Undecided', tone: 'muted' },
+  { label: 'Risk accepted by client', tone: 'warn' },
+  { label: 'Risk not accepted', tone: 'info' },
+  { label: 'Disputed', tone: 'warn' },
+] as const
 
 export const DecisionType = { AcceptRisk: 1, RequireRemediation: 2, Acknowledge: 3, Dispute: 4 } as const
 export const DECISION_LABEL = ['—', 'Accepted risk', 'Remediation required', 'Acknowledged', 'Disputed'] as const
@@ -34,8 +56,10 @@ export type Agreement = {
   client: Address
   reviewer: Address
   developer: Address
+  freelancer: Address
   target: Address
   pendingTarget: Address
+  agreementHash: Hex
   termsHash: Hex
   termsURI: string
   verifier: Verifier
@@ -47,16 +71,19 @@ export type Agreement = {
 export type Finding = {
   key: Hex
   kind: number
-  status: number
+  verification: number
+  remediation: number
+  disposition: number
   detailsHash: Hex
   evidenceHash: Hex
   assignee: Address
   firstCheck: number
   lastCheck: number
-  resolvedInCheck: number
+  lastFailedCheck: number
+  fixVerifiedInCheck: number
   disputedInCheck: number
   openedAt: bigint
-  resolvedAt: bigint
+  fixVerifiedAt: bigint
 }
 
 export type Check = {
@@ -67,8 +94,9 @@ export type Check = {
   workflowId: Hex
   workflowOwner: Address
   timestamp: bigint
-  findingCount: number
-  nonMatchCount: number
+  passed: number
+  failed: number
+  inconclusive: number
 }
 
 export type Decision = {
@@ -105,7 +133,9 @@ export type Registration = {
   client: Address
   reviewer: Address
   developer: Address
+  freelancer: Address
   target: Address
+  agreementHash: Hex
   termsHash: Hex
   termsURI: string
   verifier: Verifier
@@ -117,7 +147,7 @@ export type Registration = {
 export type Level = 'value' | 'structural'
 
 export type ReportDocument = {
-  schema: 'lexdiff/report@1' | 'lexdiff/report@2'
+  schema: 'lexdiff/report@1' | 'lexdiff/report@2' | 'lexdiff/report@3'
   contractName: string
   onchain: Record<string, string>
   findings: {
@@ -127,6 +157,7 @@ export type ReportDocument = {
     expected: string
     actual: string
     detailsHash: Hex
+    result?: number // @3: 1 Pass, 2 Fail, 3 Inconclusive
     level?: Level // @2
     method?: string // @2
   }[]
@@ -136,7 +167,18 @@ export type ReportDocument = {
     byLevel: Record<Level, number>
     unchecked: { term: string; text: string; reason: string }[]
   }
+  /** @3: where the money is; approving a contract does not move funds */
+  operational?: {
+    target: Address
+    targetBalance: string
+    expectedAmount: string
+    previousTarget: Address | null
+    previousBalance: string | null
+  }
 }
+
+/** The full signed agreement, stored off-chain; its hash is bound at registration. */
+export type AgreementDocument = { schema: 'lexdiff/agreement-document@1'; text: string }
 
 /** How a finding was established (F06). */
 export const LEVEL_PLAIN: Record<Level, { icon: string; label: string }> = {
@@ -156,7 +198,7 @@ export const registry = {
   getDecisions: (id: bigint, key: Hex) => read<Decision[]>('getDecisions', [id, key]),
   nonces: (signer: Address) => read<bigint>('nonces', [signer]),
   getEvents: async (id: bigint): Promise<AgreementEvent[]> => {
-    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK || '12015602')
+    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK || '12019746')
     const logs = await publicClient.getContractEvents({
       address: REGISTRY_ADDRESS,
       abi: registryAbi,
@@ -269,7 +311,9 @@ export const REGISTRATION_TYPES = {
     { name: 'client', type: 'address' },
     { name: 'reviewer', type: 'address' },
     { name: 'developer', type: 'address' },
+    { name: 'freelancer', type: 'address' },
     { name: 'target', type: 'address' },
+    { name: 'agreementHash', type: 'bytes32' },
     { name: 'termsHash', type: 'bytes32' },
     { name: 'termsURI', type: 'string' },
     { name: 'verifier', type: 'Verifier' },

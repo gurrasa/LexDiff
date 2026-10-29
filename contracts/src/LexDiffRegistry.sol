@@ -14,7 +14,7 @@ import {LexDiffLogic} from "./LexDiffLogic.sol";
 ///   2. Does the code match? A Chainlink CRE workflow compares and reports through the agreed forwarder.
 ///   3. Who knew?           Findings are anchored on-chain; parties sign Acknowledge.
 ///   4. Who took the risk / who fixes? Client signs Accepted risk; reviewer signs Remediation required.
-///   5. Is it fixed?        Only a later report from the agreed verifier can mark a finding Resolved.
+///   5. Is it fixed?        Only an explicit Pass of the same property in a later report verifies a fix.
 ///   6. Who disputes?       Any party can sign Dispute; history is never rewritten.
 ///
 ///   Only hashes live on-chain. Finding details, notes and terms are stored off-chain and are
@@ -28,7 +28,7 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
     bytes32 public constant VERIFIER_TYPEHASH =
         keccak256("Verifier(address forwarder,address workflowOwner,bytes32 workflowId)");
     bytes32 public constant REGISTRATION_TYPEHASH = keccak256(
-        "Registration(address client,address reviewer,address developer,address target,bytes32 termsHash,string termsURI,Verifier verifier,uint256 supersedes,uint256 deadline)Verifier(address forwarder,address workflowOwner,bytes32 workflowId)"
+        "Registration(address client,address reviewer,address developer,address freelancer,address target,bytes32 agreementHash,bytes32 termsHash,string termsURI,Verifier verifier,uint256 supersedes,uint256 deadline)Verifier(address forwarder,address workflowOwner,bytes32 workflowId)"
     );
     bytes32 public constant DECISION_TYPEHASH = keccak256(
         "Decision(uint256 agreementId,bytes32 findingKey,uint8 decision,bytes32 evidenceHash,bytes32 noteHash,uint256 nonce,uint256 deadline)"
@@ -54,7 +54,7 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
     {
         if (
             r.client == address(0) || r.reviewer == address(0) || r.developer == address(0)
-                || r.target == address(0) || r.verifier.forwarder == address(0)
+                || r.freelancer == address(0) || r.target == address(0) || r.verifier.forwarder == address(0)
         ) revert ZeroAddress();
         if (block.timestamp > r.deadline) revert SignatureExpired();
 
@@ -79,7 +79,9 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
         a.client = r.client;
         a.reviewer = r.reviewer;
         a.developer = r.developer;
+        a.freelancer = r.freelancer;
         a.target = r.target;
+        a.agreementHash = r.agreementHash;
         a.termsHash = r.termsHash;
         a.termsURI = r.termsURI;
         a.verifier = r.verifier;
@@ -99,7 +101,9 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
                     r.client,
                     r.reviewer,
                     r.developer,
+                    r.freelancer,
                     r.target,
+                    r.agreementHash,
                     r.termsHash,
                     keccak256(bytes(r.termsURI)),
                     keccak256(
@@ -113,7 +117,8 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
     }
 
     // ---------------------------------------------------------------------
-    // Redeployment: the developer or reviewer proposes, the client (who holds the funds) accepts.
+    // Redeployment: the developer or reviewer proposes, the client (who will fund it) approves.
+    // Approval does not move funds; the CRE report's balance reads evidence where the money actually is.
     // ---------------------------------------------------------------------
 
     function proposeContract(uint256 agreementId, address newTarget) external {
@@ -121,6 +126,7 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
         if (msg.sender != a.developer && msg.sender != a.reviewer) revert NotAParty(msg.sender);
         if (newTarget == address(0)) revert ZeroAddress();
         a.pendingTarget = newTarget;
+        LexDiffLogic.markFixesProposed(_ledgers[agreementId]);
         emit ContractProposed(agreementId, msg.sender, newTarget);
     }
 
@@ -133,13 +139,13 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
         a.target = newTarget;
         a.pendingTarget = address(0);
         _ledgers[agreementId].history.push(newTarget);
-        emit ContractUpdated(agreementId, previous, newTarget);
+        emit ContractApproved(agreementId, previous, newTarget);
         emit CheckRequested(agreementId, newTarget, a.termsHash);
     }
 
     function requestCheck(uint256 agreementId) external {
         Agreement storage a = _agreement(agreementId);
-        if (msg.sender != a.client && msg.sender != a.reviewer && msg.sender != a.developer) {
+        if (msg.sender != a.client && msg.sender != a.reviewer && msg.sender != a.developer && msg.sender != a.freelancer) {
             revert NotAParty(msg.sender);
         }
         emit CheckRequested(agreementId, a.target, a.termsHash);
@@ -151,6 +157,7 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
 
     /// @inheritdoc IReceiver
     /// @dev Only the agreement's own verifier (forwarder, and pinned workflow if set) is accepted.
+    ///      A missing property becomes NotChecked; only an explicit Pass of the same property verifies a fix.
     function onReport(bytes calldata metadata, bytes calldata report) external override {
         uint256 agreementId = uint256(bytes32(report[0:32]));
         LexDiffLogic.applyReport(_agreement(agreementId), _ledgers[agreementId], metadata, report);
@@ -161,7 +168,7 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
     // ---------------------------------------------------------------------
 
     /// @notice Record a signed decision. Anyone may relay it; the signature determines who decided.
-    ///         No decision type can resolve a finding.
+    ///         Decisions change Remediation or Disposition, never the Verification result.
     /// @param evidenceHash The finding version the signer reviewed. Must be current.
     /// @param noteHash keccak256 of the off-chain note (required for Dispute).
     function submitDecision(

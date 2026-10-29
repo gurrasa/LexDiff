@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: 'invalid registration' }, { status: 400 })
   }
-  for (const k of ['client', 'reviewer', 'developer', 'target'] as const) {
+  for (const k of ['client', 'reviewer', 'developer', 'freelancer', 'target'] as const) {
     if (!isAddress(registration[k] ?? '')) return Response.json({ error: `${k} must be an address` }, { status: 400 })
   }
   const id = registrationId(registration)

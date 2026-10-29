@@ -199,6 +199,11 @@ export const registryAbi = [
             "internalType": "address"
           },
           {
+            "name": "freelancer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "target",
             "type": "address",
             "internalType": "address"
@@ -207,6 +212,11 @@ export const registryAbi = [
             "name": "pendingTarget",
             "type": "address",
             "internalType": "address"
+          },
+          {
+            "name": "agreementHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "termsHash",
@@ -312,12 +322,17 @@ export const registryAbi = [
             "internalType": "uint64"
           },
           {
-            "name": "findingCount",
+            "name": "passed",
             "type": "uint16",
             "internalType": "uint16"
           },
           {
-            "name": "nonMatchCount",
+            "name": "failed",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "inconclusive",
             "type": "uint16",
             "internalType": "uint16"
           }
@@ -438,9 +453,19 @@ export const registryAbi = [
             "internalType": "enum ILexDiff.Kind"
           },
           {
-            "name": "status",
+            "name": "verification",
             "type": "uint8",
-            "internalType": "enum ILexDiff.Status"
+            "internalType": "enum ILexDiff.Verification"
+          },
+          {
+            "name": "remediation",
+            "type": "uint8",
+            "internalType": "enum ILexDiff.Remediation"
+          },
+          {
+            "name": "disposition",
+            "type": "uint8",
+            "internalType": "enum ILexDiff.Disposition"
           },
           {
             "name": "detailsHash",
@@ -468,7 +493,12 @@ export const registryAbi = [
             "internalType": "uint32"
           },
           {
-            "name": "resolvedInCheck",
+            "name": "lastFailedCheck",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "fixVerifiedInCheck",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -483,7 +513,7 @@ export const registryAbi = [
             "internalType": "uint64"
           },
           {
-            "name": "resolvedAt",
+            "name": "fixVerifiedAt",
             "type": "uint64",
             "internalType": "uint64"
           }
@@ -538,9 +568,19 @@ export const registryAbi = [
             "internalType": "enum ILexDiff.Kind"
           },
           {
-            "name": "status",
+            "name": "verification",
             "type": "uint8",
-            "internalType": "enum ILexDiff.Status"
+            "internalType": "enum ILexDiff.Verification"
+          },
+          {
+            "name": "remediation",
+            "type": "uint8",
+            "internalType": "enum ILexDiff.Remediation"
+          },
+          {
+            "name": "disposition",
+            "type": "uint8",
+            "internalType": "enum ILexDiff.Disposition"
           },
           {
             "name": "detailsHash",
@@ -568,7 +608,12 @@ export const registryAbi = [
             "internalType": "uint32"
           },
           {
-            "name": "resolvedInCheck",
+            "name": "lastFailedCheck",
+            "type": "uint32",
+            "internalType": "uint32"
+          },
+          {
+            "name": "fixVerifiedInCheck",
             "type": "uint32",
             "internalType": "uint32"
           },
@@ -583,7 +628,7 @@ export const registryAbi = [
             "internalType": "uint64"
           },
           {
-            "name": "resolvedAt",
+            "name": "fixVerifiedAt",
             "type": "uint64",
             "internalType": "uint64"
           }
@@ -672,9 +717,19 @@ export const registryAbi = [
             "internalType": "address"
           },
           {
+            "name": "freelancer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "target",
             "type": "address",
             "internalType": "address"
+          },
+          {
+            "name": "agreementHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "termsHash",
@@ -765,9 +820,19 @@ export const registryAbi = [
             "internalType": "address"
           },
           {
+            "name": "freelancer",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
             "name": "target",
             "type": "address",
             "internalType": "address"
+          },
+          {
+            "name": "agreementHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
           },
           {
             "name": "termsHash",
@@ -1029,6 +1094,31 @@ export const registryAbi = [
   },
   {
     "type": "event",
+    "name": "ContractApproved",
+    "inputs": [
+      {
+        "name": "agreementId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "previous",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "current",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "ContractProposed",
     "inputs": [
       {
@@ -1047,31 +1137,6 @@ export const registryAbi = [
         "name": "proposed",
         "type": "address",
         "indexed": false,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ContractUpdated",
-    "inputs": [
-      {
-        "name": "agreementId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "previous",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "current",
-        "type": "address",
-        "indexed": true,
         "internalType": "address"
       }
     ],
@@ -1106,10 +1171,16 @@ export const registryAbi = [
         "internalType": "address"
       },
       {
-        "name": "status",
+        "name": "remediation",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum ILexDiff.Status"
+        "internalType": "enum ILexDiff.Remediation"
+      },
+      {
+        "name": "disposition",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum ILexDiff.Disposition"
       },
       {
         "name": "noteHash",
@@ -1128,7 +1199,7 @@ export const registryAbi = [
   },
   {
     "type": "event",
-    "name": "FindingOpened",
+    "name": "FindingFailed",
     "inputs": [
       {
         "name": "agreementId",
@@ -1159,7 +1230,7 @@ export const registryAbi = [
   },
   {
     "type": "event",
-    "name": "FindingReopened",
+    "name": "FindingFixVerified",
     "inputs": [
       {
         "name": "agreementId",
@@ -1190,7 +1261,32 @@ export const registryAbi = [
   },
   {
     "type": "event",
-    "name": "FindingResolved",
+    "name": "FindingNotChecked",
+    "inputs": [
+      {
+        "name": "agreementId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "key",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "checkNo",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "FindingReopened",
     "inputs": [
       {
         "name": "agreementId",
@@ -1232,6 +1328,17 @@ export const registryAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidResult",
+    "inputs": [
+      {
+        "name": "key",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "InvalidShortString",
     "inputs": []
   },
@@ -1243,22 +1350,6 @@ export const registryAbi = [
         "name": "expectedSigner",
         "type": "address",
         "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "InvalidTransition",
-    "inputs": [
-      {
-        "name": "status",
-        "type": "uint8",
-        "internalType": "enum ILexDiff.Status"
-      },
-      {
-        "name": "decision",
-        "type": "uint8",
-        "internalType": "enum ILexDiff.DecisionType"
       }
     ]
   },
@@ -1281,6 +1372,22 @@ export const registryAbi = [
         "name": "account",
         "type": "address",
         "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "NotApplicable",
+    "inputs": [
+      {
+        "name": "verification",
+        "type": "uint8",
+        "internalType": "enum ILexDiff.Verification"
+      },
+      {
+        "name": "decision",
+        "type": "uint8",
+        "internalType": "enum ILexDiff.DecisionType"
       }
     ]
   },

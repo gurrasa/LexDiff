@@ -71,9 +71,14 @@ export async function verifyRecord(record: Json, rpcUrl: string): Promise<Assert
     return out
   }
   const ra = record.agreement ?? {}
-  const sameAgreement = (['client', 'reviewer', 'developer', 'target', 'termsHash'] as const).every((k) => eq(agreement[k], ra[k]))
+  const sameAgreement = (['client', 'reviewer', 'developer', 'freelancer', 'target', 'agreementHash', 'termsHash'] as const).every((k) => eq(agreement[k], ra[k]))
   add('Agreement', 'Parties, contract and terms fingerprint match the registry', sameAgreement ? 'valid' : 'invalid',
     sameAgreement ? `Terms fingerprint ${agreement.termsHash}` : 'The export differs from the on-chain agreement')
+  if ('agreementHash' in agreement) {
+    const full = doc((agreement as Agreement & { agreementHash: string }).agreementHash)
+    add('Agreement', 'The full agreement document is the one that was signed', full.result,
+      full.result === 'valid' ? 'Hashes to the registered fingerprint' : full.result === 'unknown' ? 'Document not included in the export' : 'Document was modified')
+  }
   const terms = doc(agreement.termsHash)
   add('Agreement', 'The terms document is the one the reviewer and client signed', terms.result,
     terms.result === 'valid' ? 'Hashes to the registered fingerprint' : terms.result === 'unknown' ? 'Terms not included in the export' : 'Terms were modified')
@@ -101,7 +106,13 @@ export async function verifyRecord(record: Json, rpcUrl: string): Promise<Assert
   const allReported = Object.values(reportByHash).flatMap((r) => r.findings)
   for (const f of findings) {
     const exported = rf.find((x) => eq(x.key, f.key))
-    const same = !!exported && eq(exported.kind, f.kind) && eq(exported.status, f.status) && eq(exported.evidenceHash, f.evidenceHash)
+    const same =
+      !!exported &&
+      eq(exported.kind, f.kind) &&
+      eq(exported.verification, f.verification) &&
+      eq(exported.remediation, f.remediation) &&
+      eq(exported.disposition, f.disposition) &&
+      eq(exported.evidenceHash, f.evidenceHash)
     let result: Result = same ? 'valid' : 'invalid'
     let label = f.key.slice(0, 10) + '…'
     let detail = same ? '' : 'Status or evidence differs from the chain'

@@ -1,12 +1,13 @@
 {
   "chainId": 11155111,
-  "deployBlock": 12015602,
-  "registry": "0xbd1472dad8e08c2f66e3f5bb3876eb9f0c8085e9",
-  "logic": "0xf498e0e9ee6875966e0589333c9014fc3113679f",
-  "usdc": "0xe45c6148e724976ee3448bace05b054175b04e1f",
-  "escrowV1": "0xed3c3bb0eaf2dad13b084eb6b539a6b3f801660d",
-  "escrowV2": "0xb36e946abc71f227e94091a4804d3618d0cd5742",
-  "websiteEscrow": "0x07f21691114522c72a25ff1795dc323e5184f07d",
-  "client": "0x04b986349d0aDC3123eE9df037409106D134c198",
-  "freelancer": "0x04b986349d0aDC3123eE9df037409106D134c198"
+  "deployBlock": 12019746,
+  "registry": "0x38409d09225d4dec903e99623a4abc17e5563c71",
+  "logic": "0x281c27308eb6fca49e0c4cbca1f10ce0f660be17",
+  "usdc": "0x524b1cd9efc10ecdc5803eb807b194f2c6ed842f",
+  "escrowV1": "0xc7f3db25a82ffd79882d5fa2c3a227d6098d2c67",
+  "escrowV2": "0x6227d4dd046530a081b55da609773a018a7157ae",
+  "websiteEscrow": "0xd016f953fa112ac19779927e6401fec97b1d6954",
+  "developer": "0x04b986349d0aDC3123eE9df037409106D134c198",
+  "client": "0xf4F5b2AeA6755bBcAd0b32b57E189d0eF3F16BCC",
+  "freelancer": "0xf4F5b2AeA6755bBcAd0b32b57E189d0eF3F16BCC"
 }

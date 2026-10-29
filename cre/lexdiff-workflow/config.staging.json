@@ -1,6 +1,6 @@
 {
   "chainSelectorName": "ethereum-testnet-sepolia",
-  "registryAddress": "0xbd1472dad8e08c2f66e3f5bb3876eb9f0c8085e9",
+  "registryAddress": "0x38409d09225d4dec903e99623a4abc17e5563c71",
   "etherscanApiUrl": "https://api.etherscan.io/v2/api",
   "etherscanChainId": "11155111",
   "evidenceStoreUrl": "https://lexdiff-production.up.railway.app/api/evidence",

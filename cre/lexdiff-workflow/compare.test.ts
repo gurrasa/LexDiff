@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { compare, coverage, detailsHash, findingKey, Kind, resolveGetters } from './compare.ts'
+import { compare, coverage, detailsHash, findingKey, Kind, removedPowers, Result, resolveGetters } from './compare.ts'
 import { buildReport } from './report.ts'
 import { analyzeSource, privilegedFunctions, stripComments } from './source-analysis.ts'
 import { canonicalize, escrowTermsSchema, termsHash } from './terms.ts'
@@ -144,8 +144,9 @@ test('report document: only hashes reach the chain, details are recoverable off-
 	const deadline = findings.find((f) => f.clause === 'Delivery deadline')!
 	assert.equal(deadline.detailsHash, detailsHash('Delivery deadline', '30 days', '3 days'))
 
-	const a = buildReport(1n, TOKEN, termsHash(terms), terms, analysis, onchain(3n), findings)
-	const b = buildReport(1n, TOKEN, termsHash(terms), terms, analysis, onchain(3n), [...findings])
+	const op = { target: TOKEN, targetBalance: '0', expectedAmount: '1000000000', previousTarget: null, previousBalance: null }
+	const a = buildReport(1n, TOKEN, termsHash(terms), terms, analysis, onchain(3n), findings, op)
+	const b = buildReport(1n, TOKEN, termsHash(terms), terms, analysis, onchain(3n), [...findings], op)
 	assert.equal(a.hash, b.hash)
 	const doc = JSON.parse(a.canonical)
 	assert.equal(doc.findings.length, findings.length)
@@ -184,4 +185,24 @@ test('second agreement: granted pause is a match, unlisted deadline setter is a 
 	assert.equal(f['Admin power: pause'].kind, Kind.Match)
 	assert.equal(f['Admin power: modify-terms'].kind, Kind.HiddenPower)
 	assert.match(f['Admin power: modify-terms'].actual, /setDeliveryPeriod/)
+})
+
+test('every property carries an explicit result: Match passes, everything else fails', () => {
+	const findings = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
+	for (const f of findings) assert.equal(f.result, f.kind === Kind.Match ? Result.Pass : Result.Fail, f.clause)
+})
+
+test('a hidden power that disappears is reported as an explicit pass of the same property', () => {
+	const v1 = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
+	const power = v1.find((f) => f.kind === Kind.HiddenPower)!
+	const previous = v1.map((f) => ({ key: f.key, kind: f.kind, verification: f.result }))
+	// The fixed contract no longer has the owner withdrawal.
+	const now = v1.filter((f) => f.kind !== Kind.HiddenPower)
+	const removed = removedPowers(previous, now)
+	assert.equal(removed.length, 1)
+	assert.equal(removed[0].key, power.key)
+	assert.equal(removed[0].result, Result.Pass)
+	assert.equal(removed[0].kind, Kind.Match)
+	// Still present: nothing to add.
+	assert.equal(removedPowers(previous, v1).length, 0)
 })

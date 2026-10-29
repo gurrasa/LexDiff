@@ -2,6 +2,14 @@
 pragma solidity ^0.8.24;
 
 /// @notice Types, events and errors shared by LexDiffRegistry and LexDiffLogic.
+///
+/// A finding is described along four independent dimensions. None of them can stand in for another:
+///   Kind         what the comparison observed           (Match / Mismatch / Missing / HiddenPower)
+///   Verification the technical result of the last check (Pass / Fail / Inconclusive / NotChecked)
+///   Remediation  the repair process                     (None / Required / FixProposed / FixVerified / Reopened)
+///   Disposition  the parties' risk decision             (Undecided / Accepted / Rejected / Disputed)
+/// Accepting a risk changes Disposition only; it never turns a Fail into a Pass. A fix is verified only when
+/// the same property explicitly passes a later check. A property missing from a report becomes NotChecked.
 interface ILexDiff {
     enum Kind {
         Match, //        code and agreement agree
@@ -10,18 +18,32 @@ interface ILexDiff {
         HiddenPower //   in the code, not in the agreement
     }
 
-    enum Status {
-        None, //                 nothing to act on (a match)
-        Open,
-        AcceptedRisk,
-        RemediationRequired,
-        Resolved
+    enum Verification {
+        NotChecked, //   not assessed in the latest check
+        Pass,
+        Fail,
+        Inconclusive //  assessed, but the evidence was insufficient
+    }
+
+    enum Remediation {
+        None,
+        Required, //     reviewer assigned a fix to the developer
+        FixProposed, //  developer proposed a replacement contract
+        FixVerified, //  the same property explicitly passed a later check
+        Reopened //      a verified fix failed again
+    }
+
+    enum Disposition {
+        Undecided,
+        Accepted, //     client knowingly accepts the failing property
+        Rejected, //     reviewer does not accept it (a fix is required)
+        Disputed //      a party contests the finding
     }
 
     enum DecisionType {
         None,
-        AcceptRisk, //           client: knowingly accepts the finding
-        RequireRemediation, //   reviewer: assigns the developer
+        AcceptRisk, //           client
+        RequireRemediation, //   reviewer; assigns the developer
         Acknowledge, //          any party: "I have seen this evidence"
         Dispute //               any party: "I contest this evidence" (reason required)
     }
@@ -39,11 +61,13 @@ interface ILexDiff {
         address client;
         address reviewer;
         address developer;
+        address freelancer; //   payee: an affected party who can acknowledge and dispute
         address target;
-        bytes32 termsHash; //   keccak256 of the canonical, reviewed terms JSON
-        string termsURI; //     where the CRE workflow fetches the terms
+        bytes32 agreementHash; // keccak256 of the full signed agreement document (canonical JSON)
+        bytes32 termsHash; //    keccak256 of the reviewed structured terms (canonical JSON)
+        string termsURI; //      where the CRE workflow fetches the terms
         Verifier verifier;
-        uint256 supersedes; //  agreement this one amends (0 = none)
+        uint256 supersedes; //   agreement this one amends (0 = none)
         uint256 deadline;
     }
 
@@ -51,8 +75,10 @@ interface ILexDiff {
         address client;
         address reviewer;
         address developer;
-        address target; //        contract currently enforcing the agreement
-        address pendingTarget; //  proposed replacement awaiting the client's acceptance
+        address freelancer;
+        address target; //        contract approved by the client (the one to fund)
+        address pendingTarget; //  proposed replacement awaiting the client's approval
+        bytes32 agreementHash;
         bytes32 termsHash;
         string termsURI;
         Verifier verifier;
@@ -69,30 +95,35 @@ interface ILexDiff {
         bytes32 workflowId;
         address workflowOwner;
         uint64 timestamp;
-        uint16 findingCount;
-        uint16 nonMatchCount;
+        uint16 passed;
+        uint16 failed;
+        uint16 inconclusive;
     }
 
-    /// @dev Shape of one finding inside a CRE report. Human-readable details stay off-chain.
+    /// @dev One assessed property inside a CRE report. Human-readable details stay off-chain.
     struct FindingInput {
         bytes32 key;
         Kind kind;
-        bytes32 detailsHash; // keccak256 of canonical {clause, expected, actual}
+        Verification result; // Pass, Fail or Inconclusive (NotChecked is never reported)
+        bytes32 detailsHash; //  keccak256 of canonical {clause, expected, actual}
     }
 
     struct Finding {
         bytes32 key;
         Kind kind;
-        Status status;
-        bytes32 detailsHash; // 0 = no longer present in the code
+        Verification verification;
+        Remediation remediation;
+        Disposition disposition;
+        bytes32 detailsHash;
         bytes32 evidenceHash;
         address assignee;
         uint32 firstCheck;
-        uint32 lastCheck;
-        uint32 resolvedInCheck;
-        uint32 disputedInCheck; // last check whose evidence was disputed
+        uint32 lastCheck; //         last check that assessed this property
+        uint32 lastFailedCheck;
+        uint32 fixVerifiedInCheck;
+        uint32 disputedInCheck;
         uint64 openedAt;
-        uint64 resolvedAt;
+        uint64 fixVerifiedAt;
     }
 
     struct Decision {
@@ -114,21 +145,25 @@ interface ILexDiff {
         uint256 supersedes
     );
     event ContractProposed(uint256 indexed agreementId, address indexed proposer, address proposed);
-    event ContractUpdated(uint256 indexed agreementId, address indexed previous, address indexed current);
+    /// @notice The client approved `current` as the contract to fund. Moving funds is a separate step,
+    ///         evidenced by the CRE report's balance reads, not by this event.
+    event ContractApproved(uint256 indexed agreementId, address indexed previous, address indexed current);
     /// @notice Picked up by the CRE workflow's EVM log trigger.
     event CheckRequested(uint256 indexed agreementId, address indexed target, bytes32 termsHash);
     event CheckRecorded(
         uint256 indexed agreementId, uint32 indexed checkNo, address target, bytes32 codeHash, bytes32 reportHash
     );
-    event FindingOpened(uint256 indexed agreementId, bytes32 indexed key, Kind kind, bytes32 evidenceHash);
-    event FindingResolved(uint256 indexed agreementId, bytes32 indexed key, uint32 checkNo, bytes32 evidenceHash);
+    event FindingFailed(uint256 indexed agreementId, bytes32 indexed key, Kind kind, bytes32 evidenceHash);
+    event FindingFixVerified(uint256 indexed agreementId, bytes32 indexed key, uint32 checkNo, bytes32 evidenceHash);
     event FindingReopened(uint256 indexed agreementId, bytes32 indexed key, uint32 checkNo, bytes32 evidenceHash);
+    event FindingNotChecked(uint256 indexed agreementId, bytes32 indexed key, uint32 checkNo);
     event DecisionRecorded(
         uint256 indexed agreementId,
         bytes32 indexed key,
         DecisionType decision,
         address indexed signer,
-        Status status,
+        Remediation remediation,
+        Disposition disposition,
         bytes32 noteHash
     );
 
@@ -145,9 +180,10 @@ interface ILexDiff {
     error WrongWorkflow();
     error StaleTarget(address reported, address current);
     error TermsMismatch(bytes32 reported, bytes32 current);
+    error InvalidResult(bytes32 key);
     error UnknownFinding(bytes32 key);
     error StaleEvidence(bytes32 signed, bytes32 current);
     error WrongRole(address signer, DecisionType decision);
-    error InvalidTransition(Status status, DecisionType decision);
+    error NotApplicable(Verification verification, DecisionType decision);
     error ReasonRequired();
 }

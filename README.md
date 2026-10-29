@@ -1,6 +1,8 @@
-# LexDiff — responsible smart contracts
+# LexDiff — verifiable agreement-to-code accountability
 
-LexDiff compares a legal agreement with the smart contract that is supposed to enforce it, anchors every mismatch on-chain, and tracks who is responsible for each one until a Chainlink CRE check verifies it is resolved.
+LexDiff compares a legal agreement with the smart contract that is supposed to enforce it, anchors every result on-chain, and tracks who decided what about each failing property until a Chainlink CRE check verifies that the same property now passes.
+
+> We show what was checked, what was not checked, what failed, who decided what, and whether a specific failure was demonstrably corrected.
 
 > LexDiff doesn't decide liability. It preserves the evidence a court needs to decide it.
 
@@ -21,7 +23,7 @@ Each question has a signed or independently verified answer.
 | 2. **Does the code match?** | A Chainlink CRE workflow compares the terms with the Etherscan-verified source and on-chain state, deterministically. | CRE |
 | 3. **Who knew?** | Findings are anchored on-chain by hash. Parties sign *Acknowledge* on the exact evidence they saw. | Any party |
 | 4. **Who took the risk, and who fixes?** | The client signs *Accepted risk*. The reviewer signs *Remediation required*, which assigns the developer. | Client / reviewer |
-| 5. **Is it fixed?** | Only a report from the agreement's own verifier can mark a finding *Resolved*. No signature can. | CRE |
+| 5. **Is it fixed?** | A fix is *verified* only when the same property explicitly passes a later check from the agreement's own verifier. No signature can do it, and a property missing from a report becomes *Not checked*, never fixed. | CRE |
 | 6. **Who disputes?** | Any party signs *Dispute* with a reason. The finding and its history stay unchanged. Amendments become new agreements that link to the old one. | Any party |
 
 In RACI terms: the developer is *Responsible* for fixes, the client is *Accountable* for accepted risks, the reviewer is *Consulted* on the terms, and every party is *Informed* via the chain. The difference is that every role here is signed and verifiable.
@@ -35,7 +37,7 @@ In RACI terms: the developer is *Responsible* for fixes, the client is *Accounta
 - **Human oversight of AI.** The extraction is a draft. The reviewer's signature over the terms hash records who approved it.
 - **History is append-only.** Nothing is overwritten: an amendment is a new agreement, a regression reopens a finding, and a dispute is added alongside.
 
-**Say:** "LexDiff compares approved agreement terms with deployed code and on-chain values, records evidence-bound signed decisions, and only marks findings resolved through reports delivered by the agreement's Chainlink CRE verifier."
+**Say:** "LexDiff compares approved agreement terms with deployed code and on-chain values, records evidence-bound signed decisions, and only marks a fix verified when the agreement's Chainlink CRE verifier reports that the same property now passes."
 
 **Don't say:** "LexDiff proves a developer is liable", "a wallet signature is legally binding consent", "AI verified the contract", or "the escrow is secure".
 
@@ -45,7 +47,25 @@ In RACI terms: the developer is *Responsible* for fixes, the client is *Accounta
 
 The registry has no owner and no global settings. Each agreement names its own **verifier** (CRE forwarder, plus an optional pinned workflow owner and workflow ID) inside the registration that the client and reviewer sign. Nobody can change it afterwards, including the deployer.
 
-A redeployed contract is **proposed** by the developer or reviewer and **accepted** by the client, who holds the funds. This prevents findings from being "resolved" against a contract nobody uses.
+A redeployed contract is **proposed** by the developer or reviewer and **approved** by the client, who will fund it. Approval chooses the contract; it does not move money. Each CRE report reads the token balance of the approved contract and of the previous one, so the record shows where the funds actually are.
+
+## Status model: four independent dimensions
+
+A finding never collapses into one "status". Each property carries:
+
+| Dimension | Values | Changed by |
+|---|---|---|
+| **Kind**: what was observed | Match · Mismatch · Missing · Hidden power | CRE report |
+| **Verification**: technical result of the latest check | Pass · Fail · Inconclusive · Not checked | CRE report only |
+| **Remediation**: the repair process | — · Fix required · Fix proposed · **Fix verified** · Fix reopened | Reviewer (required), developer (proposed), CRE (verified/reopened) |
+| **Disposition**: the parties' risk decision | Undecided · Risk accepted · Risk not accepted · Disputed | Client (accept), reviewer (not accepted), any party (dispute) |
+
+Rules enforced by the registry:
+
+- **Fix verified** requires an explicit *Pass* of the same property after it failed, while a fix was in progress. A removed hidden power is reported as an explicit Pass by the workflow.
+- A property **absent** from a report becomes *Not checked*; it is never treated as fixed.
+- **Accepting a risk** changes the disposition only. The property still shows *Fail*.
+- A proposed fix that still fails goes back to *Fix required*; a verified fix that fails again is *Fix reopened*.
 
 ## Architecture
 
@@ -118,7 +138,7 @@ Each report also lists the terms that were **not** checked automatically (today:
 1. The reviewer signs **Remediation required** on the deadline and the refund. The developer signs **Acknowledge**.
 2. The client signs **Accepted risk** on the owner's withdrawal power. That is now on-chain proof the client saw that exact evidence.
 3. The developer deploys **FreelanceEscrowV2** and proposes it; the client accepts it.
-4. CRE re-runs. The deadline and refund move to **Resolved (verified in check #2)**. The withdrawal power stays **Accepted risk**.
+4. CRE re-runs. The deadline and refund become **Pass · Fix verified** (in check #2). The withdrawal power stays **Fail · Risk accepted by client**: accepted, not fixed.
 5. Optionally, a party signs **Dispute** on any finding. It is shown as ⚖️ Disputed, and nothing is rewritten.
 
 ## Running it
@@ -189,7 +209,7 @@ The app needs a persistent disk for its evidence store and signing requests.
 4. **Variables**:
    - `ANTHROPIC_API_KEY`
    - `NEXT_PUBLIC_REGISTRY_ADDRESS`
-   - `NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK=12015602`
+   - `NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK=12019746`
    - `NEXT_PUBLIC_SEPOLIA_RPC_URL`
    - `EVIDENCE_DIR=/data/evidence`
    - `REGISTRATIONS_DIR=/data/registrations`
@@ -228,11 +248,25 @@ The agreement page shows where you are (*Agreement signed → Code checked → D
 4. As developer: propose the corrected contract (`escrowV2` is prefilled). As client: approve it.
 5. **Run the Chainlink check** again. The deadline and refund show **Fixed: confirmed by Chainlink**.
 
+## Deployment and test matrix (29 October 2026)
+
+| What | Where | Status |
+|---|---|---|
+| LexDiffRegistry | Sepolia [`0x3840…3c71`](https://sepolia.etherscan.io/address/0x38409d09225d4dec903e99623a4abc17e5563c71#code), block 12019746 | Deployed and verified |
+| LexDiffLogic (library) | Sepolia [`0x281c…be17`](https://sepolia.etherscan.io/address/0x281c27308eb6fca49e0c4cbca1f10ce0f660be17#code) | Deployed and verified |
+| Demo escrows V1 / V2 / WebsiteEscrow, MockUSDC | Addresses in [contracts/deployments/11155111.json](contracts/deployments/11155111.json) | Deployed and verified |
+| Registry tests | `forge test` | 22/22 pass |
+| Workflow tests | `npm test` in `cre/lexdiff-workflow` | 15/15 pass |
+| Workflow WASM build | `bun x cre-compile` | Builds |
+| Full flow on a local chain | web EIP-712 + workflow encoding + registry | Pass: V1 fails → decisions → V2 → fixes verified, accepted risk still fails |
+| CRE simulation against Sepolia | CRE CLI simulator, `--broadcast`, mock forwarder | Ran end to end on the previous registry; container build tested on Linux |
+| Trust model | Sepolia **MockKeystoneForwarder** | Does not verify DON signatures (simulation). Production needs the KeystoneForwarder and a deployed workflow (requires CRE deploy access). |
+
 ## Tests
 
 ```bash
-cd contracts && forge test                       # 17 tests: signatures, roles, verifier pinning, snapshots, disputes, amendments
-cd cre/lexdiff-workflow && npm test              # 13 tests: comparison, refund structure, levels/coverage, second agreement, report hashing
+cd contracts && forge test                       # 22 tests: signatures, roles, verifier pinning, status model, disputes, amendments
+cd cre/lexdiff-workflow && npm test              # 15 tests: comparison, explicit results, removed powers, levels/coverage, second agreement, report hashing
 cd cre/lexdiff-workflow && bun x cre-compile main.ts /tmp/lexdiff.wasm   # WASM build check
 ```
 

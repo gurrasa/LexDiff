@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { type Address, decodeEventLog } from 'viem'
 import {
+  type AgreementDocument,
   connectWallet,
   DOMAIN,
   EXPLORER,
@@ -24,8 +25,8 @@ import type { EscrowTerms } from '@/lib/terms'
 type Role = 'client' | 'reviewer'
 
 const WHAT_YOU_SIGN: Record<Role, string> = {
-  reviewer: 'As the lawyer, you confirm these terms are a correct reading of the signed agreement. This records who approved the AI extraction.',
-  client: 'As the client, you agree that these terms, these roles, this contract and this checker apply to your agreement.',
+  reviewer: 'As the lawyer, you confirm these terms are a correct reading of the full agreement below. This records who approved the AI extraction.',
+  client: 'As the client, you confirm the full agreement, these terms, the parties, this contract and this checker.',
 }
 
 export default function SignView() {
@@ -33,6 +34,7 @@ export default function SignView() {
   const router = useRouter()
   const [pending, setPending] = useState<PendingRegistration | null>(null)
   const [terms, setTerms] = useState<EscrowTerms | null>(null)
+  const [document, setDocument] = useState<AgreementDocument | null>(null)
   const [account, setAccount] = useState<Address | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -45,6 +47,7 @@ export default function SignView() {
     const p = { ...body, registration: registrationFromJson(body.registration) } as PendingRegistration
     setPending(p)
     setTerms(await getEvidence<EscrowTerms>(p.registration.termsHash, p.registration.termsURI))
+    setDocument(await getEvidence<AgreementDocument>(p.registration.agreementHash))
   }, [id])
 
   useEffect(() => {
@@ -168,7 +171,17 @@ export default function SignView() {
             Checked by: Chainlink CRE{' '}
             {same(r.verifier.forwarder, SEPOLIA_MOCK_FORWARDER) ? <span className="badge tone-warn">simulation</span> : <span className="badge tone-ok">production</span>}
           </div>
-          <div className="small muted">Terms fingerprint {r.termsHash.slice(0, 18)}…</div>
+          {document ? (
+            <details>
+              <summary>The full agreement being signed</summary>
+              <pre style={{ whiteSpace: 'pre-wrap' }}>{document.text}</pre>
+            </details>
+          ) : (
+            <p className="error small">The full agreement could not be loaded or does not match its fingerprint.</p>
+          )}
+          <div className="small muted">
+            Agreement fingerprint {r.agreementHash.slice(0, 18)}… · terms fingerprint {r.termsHash.slice(0, 18)}…
+          </div>
         </section>
 
         <section className="panel stack">
@@ -178,6 +191,7 @@ export default function SignView() {
               {party(oneSigner ? 'Lawyer & client' : 'Lawyer (reviewer)', 'reviewer', r.reviewer)}
               {!oneSigner && party('Client', 'client', r.client)}
               {party('Developer', null, r.developer)}
+              {party('Freelancer', null, r.freelancer)}
             </tbody>
           </table>
 

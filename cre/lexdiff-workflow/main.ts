@@ -36,7 +36,15 @@ import {
 } from 'viem'
 import { z } from 'zod'
 import { ERC20_ABI, REGISTRY_ABI, REPORT_PARAMS } from './abi.ts'
-import { compare, type Finding, GETTER_CANDIDATES, type GetterTerm, type OnchainValues, resolveGetters } from './compare.ts'
+import {
+	compare,
+	type Finding,
+	GETTER_CANDIDATES,
+	type GetterTerm,
+	type OnchainValues,
+	removedPowers,
+	resolveGetters,
+} from './compare.ts'
 import { buildReport } from './report.ts'
 import { analyzeSource, type EtherscanSourceResult, type SourceAnalysis } from './source-analysis.ts'
 import { canonicalize, type EscrowTerms, escrowTermsSchema } from './terms.ts'
@@ -185,12 +193,33 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	// 4. Actual on-chain state of the contract.
 	const onchain = readOnchainValues(runtime, evm, a.target, analysis)
 
-	// 5. Deterministic comparison.
-	const findings = compare(terms, analysis, onchain)
-	for (const f of findings) runtime.log(`  [${['MATCH', 'MISMATCH', 'MISSING', 'HIDDEN'][f.kind]}] ${f.clause}: expected ${f.expected}, actual ${f.actual}`)
+	// 5. Deterministic comparison, with an explicit result for every property.
+	const compared = compare(terms, analysis, onchain)
+	// Hidden powers found earlier that are gone now are reported as an explicit Pass of the same property.
+	const previous = readRegistry(runtime, evm, 'getFindings', [agreementId]) as readonly {
+		key: `0x${string}`
+		kind: number
+		verification: number
+	}[]
+	const findings = [...compared, ...removedPowers(previous, compared)]
+
+	// Operational evidence: where the escrowed money is (approval of a contract does not move funds).
+	const history = readRegistry(runtime, evm, 'getContractHistory', [agreementId]) as readonly `0x${string}`[]
+	const previousTarget = history.length > 1 ? history[history.length - 2] : null
+	const balanceOf = (holder: string) =>
+		onchain.token ? (readTokenBalance(runtime, evm, onchain.token, holder) as bigint).toString() : '0'
+	const operational = {
+		target: a.target,
+		targetBalance: balanceOf(a.target),
+		expectedAmount: (onchain.amount ?? 0n).toString(),
+		previousTarget,
+		previousBalance: previousTarget ? balanceOf(previousTarget) : null,
+	}
+	runtime.log(`Escrow balance ${operational.targetBalance} of ${operational.expectedAmount}${previousTarget ? `, previous contract ${operational.previousBalance}` : ''}`)
+	for (const f of findings) runtime.log(`  [${['', 'PASS', 'FAIL', 'INCONCLUSIVE'][f.result]} · ${['match', 'mismatch', 'missing', 'hidden power'][f.kind]}] ${f.clause}: expected ${f.expected}, actual ${f.actual}`)
 
 	// 6. Full report off-chain (it names vulnerabilities); only hashes go on-chain.
-	const report = buildReport(agreementId, a.target, a.termsHash, terms, analysis, onchain, findings)
+	const report = buildReport(agreementId, a.target, a.termsHash, terms, analysis, onchain, findings, operational)
 	http
 		.sendRequest(runtime, storeReport, consensusIdenticalAggregation<string>())(
 			config.evidenceStoreUrl,
@@ -207,7 +236,7 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 		analysis.codeHash,
 		a.termsHash,
 		report.hash,
-		findings.map((f: Finding) => ({ key: f.key, kind: f.kind, detailsHash: f.detailsHash })),
+		findings.map((f: Finding) => ({ key: f.key, kind: f.kind, result: f.result, detailsHash: f.detailsHash })),
 	])
 	const signed = runtime.report(prepareReportRequest(payload)).result()
 	const reply = evm
@@ -223,6 +252,34 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	const txHash = reply.txHash ? bytesToHex(reply.txHash) : 'n/a'
 	runtime.log(`Report written: ${txHash}`)
 	return JSON.stringify({ agreementId: agreementId.toString(), findings: findings.length, reportHash: report.hash, txHash })
+}
+
+const readRegistry = (runtime: Runtime<Config>, evm: EVMClient, functionName: 'getFindings' | 'getContractHistory', args: [bigint]) => {
+	const reply = evm
+		.callContract(runtime, {
+			call: encodeCallMsg({
+				from: zeroAddress,
+				to: runtime.config.registryAddress as Address,
+				data: encodeFunctionData({ abi: REGISTRY_ABI, functionName, args }),
+			}),
+			blockNumber: blockFor(runtime),
+		})
+		.result()
+	return decodeFunctionResult({ abi: REGISTRY_ABI, functionName, data: bytesToHex(reply.data) })
+}
+
+const readTokenBalance = (runtime: Runtime<Config>, evm: EVMClient, token: string, holder: string) => {
+	const reply = evm
+		.callContract(runtime, {
+			call: encodeCallMsg({
+				from: zeroAddress,
+				to: token as Address,
+				data: encodeFunctionData({ abi: ERC20_ABI, functionName: 'balanceOf', args: [holder as Address] }),
+			}),
+			blockNumber: blockFor(runtime),
+		})
+		.result()
+	return decodeFunctionResult({ abi: ERC20_ABI, functionName: 'balanceOf', data: bytesToHex(reply.data) })
 }
 
 const readAgreement = (runtime: Runtime<Config>, evm: EVMClient, agreementId: bigint) => {

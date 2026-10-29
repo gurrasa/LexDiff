@@ -3,16 +3,19 @@
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
-import { type Address, type Hex, isAddress } from 'viem'
-import { KIND_PLAIN, ROLES, type Role, rolesOf, roleNames, STATUS_PLAIN, STEPS, stageOf } from '@/lib/plain'
+import { type Address, formatUnits, type Hex, isAddress } from 'viem'
+import { isFailing, KIND_PLAIN, ROLES, type Role, rolesOf, roleNames, STEPS, stageOf } from '@/lib/plain'
 import {
   type Agreement,
+  type AgreementDocument,
   type AgreementEvent,
   type Check,
   connectWallet,
   DECISION_TYPES,
   type Decision,
   DecisionType,
+  DISPOSITION,
+  Disposition,
   DOMAIN,
   EXPLORER,
   type Finding,
@@ -24,11 +27,14 @@ import {
   LEVEL_PLAIN,
   type Level,
   type ReportDocument,
+  REMEDIATION,
+  Remediation,
   registry,
   watchAccount,
   same,
-  STATUS_TONE,
   shortAddr,
+  VERIFICATION,
+  Verification,
   writeRegistry,
   ZERO_BYTES32,
 } from '@/lib/registry'
@@ -49,9 +55,13 @@ type Data = {
   decisions: Record<string, Decision[]>
   notes: Record<string, string>
   chainEvents: AgreementEvent[]
+  document: AgreementDocument | null
 }
 
 const ZERO = '0x0000000000000000000000000000000000000000'
+
+const fmtAmount = (raw: string, terms: EscrowTerms | null) =>
+  terms ? `${formatUnits(BigInt(raw), terms.payment.decimals)} ${terms.payment.tokenSymbol}` : raw
 
 const DECISION_VERB: Record<number, string> = {
   [DecisionType.AcceptRisk]: 'accepted the risk',
@@ -81,9 +91,10 @@ export default function AgreementView() {
       registry.getContractHistory(id),
       registry.getEvents(id).catch(() => [] as AgreementEvent[]),
     ])
-    const [terms, reports] = await Promise.all([
+    const [terms, reports, document] = await Promise.all([
       getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI),
       Promise.all(checks.map((c) => getEvidence<ReportDocument>(c.reportHash))),
+      getEvidence<AgreementDocument>(agreement.agreementHash),
     ])
     // Details are only shown when the off-chain report hashes to what Chainlink anchored on-chain.
     const details: Record<string, Details> = {}
@@ -105,7 +116,7 @@ export default function AgreementView() {
         if (v) noteText[h] = v.note
       }),
     )
-    setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText, chainEvents })
+    setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText, chainEvents, document })
   }, [id])
 
   // Follow MetaMask: switching account switches role, so each person sees only their own actions.
@@ -196,13 +207,19 @@ export default function AgreementView() {
   if (error && !data) return <p className="error">{error}</p>
   if (!data) return <p className="muted">Loading agreement #{idParam} from Sepolia…</p>
 
-  const { agreement: a, terms, findings, checks, details, past, history, decisions, notes: noteText, chainEvents } = data
+  const { agreement: a, terms, findings, checks, details, past, history, decisions, notes: noteText, chainEvents, document: agreementDoc } = data
   const myRoles = rolesOf(a, account)
   const role = actingAs && myRoles.includes(actingAs) ? actingAs : (myRoles[0] ?? null)
   const stage = stageOf(a, findings, checks)
-  const issues = findings.filter((f) => f.kind !== 0 || f.status === 4).sort((x, y) => x.status - y.status)
-  const matches = findings.filter((f) => f.kind === 0 && f.status !== 4)
-  const coverage = data.reports.at(-1)?.coverage
+  // A property has a story when it failed at some point, was not checked, or someone decided on it.
+  const hasStory = (f: Finding) =>
+    f.verification !== Verification.Pass || f.lastFailedCheck !== 0 || f.remediation !== Remediation.None || f.disposition !== Disposition.Undecided
+  const rank = (f: Finding) => (isFailing(f) ? 0 : f.verification === Verification.NotChecked ? 1 : 2)
+  const issues = findings.filter(hasStory).sort((x, y) => rank(x) - rank(y))
+  const matches = findings.filter((f) => !hasStory(f))
+  const latestReport = data.reports.at(-1)
+  const coverage = latestReport?.coverage
+  const operational = latestReport?.operational
   const pending = a.pendingTarget !== ZERO
   const isMock = same(a.verifier.forwarder, '0x15fC6ae953E024d975e77382eEeC56A9101f9F88')
   const simulateCmd = `cd cre && cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \\\n  --non-interactive --trigger-index 0 --http-payload '{"agreementId":${idParam}}'`
@@ -212,13 +229,14 @@ export default function AgreementView() {
     // Self-contained: the off-chain documents travel with the record, so /verify (or anyone) can
     // re-hash them against the on-chain anchors without trusting LexDiff's evidence store.
     const documents: Record<string, unknown> = {}
+    if (agreementDoc) documents[a.agreementHash] = agreementDoc
     if (terms) documents[a.termsHash] = terms
     checks.forEach((c, i) => {
       if (data.reports[i]) documents[c.reportHash] = data.reports[i]
     })
     for (const [hash, note] of Object.entries(noteText)) documents[hash] = noteValue(note)
     const record = {
-      schema: 'lexdiff/case-record@2',
+      schema: 'lexdiff/case-record@3',
       exportedAt: new Date().toISOString(),
       chainId: 11155111,
       registry: process.env.NEXT_PUBLIC_REGISTRY_ADDRESS,
@@ -237,6 +255,7 @@ export default function AgreementView() {
         'Hashes prove these documents are the ones anchored on-chain, not that their content is true or legally valid.',
         'A wallet signature proves control of a key, not the legal identity or authority of the signer.',
         'Structural checks read the verified source code; they do not execute it.',
+        'An accepted risk is still a failing property. Approving a contract does not move funds.',
       ],
     }
     const json = JSON.stringify(record, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
@@ -253,7 +272,7 @@ export default function AgreementView() {
     { t: a.createdAt, text: 'Agreement registered. The reviewer and the client signed the terms.' },
     ...checks.map((c, i) => ({
       t: c.timestamp,
-      text: `Chainlink check #${i + 1} of contract ${shortAddr(c.target)}: ${c.nonMatchCount === 0 ? 'no issues' : `${c.nonMatchCount} issue${c.nonMatchCount > 1 ? 's' : ''}`}.`,
+      text: `Chainlink check #${i + 1} of contract ${shortAddr(c.target)}: ${c.passed} pass, ${c.failed} fail${c.inconclusive ? `, ${c.inconclusive} inconclusive` : ''}.`,
     })),
     ...findings.flatMap((f) =>
       (decisions[f.key] ?? []).map((d) => ({
@@ -262,7 +281,9 @@ export default function AgreementView() {
         note: d.noteHash !== ZERO_BYTES32 ? noteText[d.noteHash] : undefined,
       })),
     ),
-    ...findings.filter((f) => f.status === 4).map((f) => ({ t: f.resolvedAt, text: `Chainlink confirmed the fix: ${clauseOf(f)}.` })),
+    ...findings
+      .filter((f) => f.remediation === Remediation.FixVerified)
+      .map((f) => ({ t: f.fixVerifiedAt, text: `Chainlink verified the fix: ${clauseOf(f)} now passes.` })),
   ].sort((x, y) => Number(x.t - y.t))
 
   const nextAction = () => {
@@ -315,7 +336,7 @@ export default function AgreementView() {
     if (stage.waitingFor === 'client' && pending && role === 'client') {
       return (
         <button onClick={() => run('Approving the new contract', async () => void (await writeRegistry('acceptContract', [id, a.pendingTarget])))} disabled={!!busy}>
-          Approve {shortAddr(a.pendingTarget)} as the contract that holds the money
+          Approve {shortAddr(a.pendingTarget)} as the contract to fund
         </button>
       )
     }
@@ -429,29 +450,60 @@ export default function AgreementView() {
           )}
         </section>
       )}
-      {checks.length > 0 && issues.length === 0 && <p className="notice">No issues: the contract matches every checked term.</p>}
+      {checks.length > 0 && issues.length === 0 && <p className="notice">Every checked property passes.</p>}
+      {operational && (
+        <section className="panel small" style={{ marginTop: '1rem' }}>
+          <b>Where the money is.</b> Approved contract {shortAddr(operational.target)} holds{' '}
+          <b>{fmtAmount(operational.targetBalance, terms)}</b> of {fmtAmount(operational.expectedAmount, terms)}
+          {BigInt(operational.targetBalance) >= BigInt(operational.expectedAmount) && BigInt(operational.expectedAmount) > BigInt(0)
+            ? <span className="badge tone-ok" style={{ marginLeft: 6 }}>funded</span>
+            : <span className="badge tone-muted" style={{ marginLeft: 6 }}>not funded yet</span>}
+          {operational.previousTarget && operational.previousBalance !== null && BigInt(operational.previousBalance) > BigInt(0) && (
+            <div className="error" style={{ marginTop: '0.5rem' }}>
+              The previous contract {shortAddr(operational.previousTarget)} still holds {fmtAmount(operational.previousBalance, terms)}.
+              Approving the new contract did not move these funds.
+            </div>
+          )}
+          <div className="muted">Read from Sepolia by Chainlink in the latest check.</div>
+        </section>
+      )}
 
       <div className="stack" style={{ marginTop: '1rem' }}>
         {issues.map((f) => {
           const d = f.detailsHash === ZERO_BYTES32 ? null : details[f.detailsHash]
           const before = (past[f.key] ?? []).filter((p) => p.kind !== 0).at(-1)
           const ds = decisions[f.key] ?? []
-          const disputed = f.disputedInCheck !== 0 && f.disputedInCheck === f.lastCheck
-          const tone = f.status === 4 ? 'ok' : KIND[f.kind].tone
+          const failing = isFailing(f)
+          const fixed = f.remediation === Remediation.FixVerified
+          const tone = f.verification === Verification.Pass ? 'ok' : failing ? KIND[f.kind].tone : 'warn'
           const ackedByMe = ds.some((x) => x.decision === DecisionType.Acknowledge && x.atCheck === f.lastCheck && same(x.signer, account ?? ''))
-          const canAccept = role === 'client' && (f.status === 1 || f.status === 3)
-          const canAssign = role === 'reviewer' && (f.status === 1 || f.status === 2)
+          const canAccept = role === 'client' && failing && f.disposition !== Disposition.Accepted
+          const canAssign =
+            role === 'reviewer' && failing && (f.remediation === Remediation.None || f.remediation === Remediation.Reopened)
           const note = notes[f.key] ?? ''
+          const v = VERIFICATION[f.verification]
           return (
             <article key={f.key} className={`finding tone-${tone}`}>
               <div className="row spread">
-                <h3 style={{ margin: 0 }}>{f.status === 4 ? '✅' : KIND[f.kind].icon} {clauseOf(f)}</h3>
+                <h3 style={{ margin: 0 }}>{f.verification === Verification.Pass ? '✅' : failing ? KIND[f.kind].icon : '❔'} {clauseOf(f)}</h3>
                 <div className="row" style={{ gap: 6 }}>
-                  <span className={`badge tone-${STATUS_TONE[f.status]}`}>{STATUS_PLAIN[f.status]}</span>
-                  {disputed && <span className="badge tone-warn">⚖️ Disputed</span>}
+                  <span className={`badge tone-${v.tone}`} title="Technical result of the latest check">{v.label}</span>
+                  {f.remediation !== Remediation.None && (
+                    <span className={`badge tone-${REMEDIATION[f.remediation].tone}`} title="Repair process">{REMEDIATION[f.remediation].label}</span>
+                  )}
+                  {f.disposition !== Disposition.Undecided && (
+                    <span className={`badge tone-${DISPOSITION[f.disposition].tone}`} title="Risk decision">
+                      {f.disposition === Disposition.Disputed ? '⚖️ ' : ''}{DISPOSITION[f.disposition].label}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="small muted">{f.status === 4 ? 'Was: ' + KIND_PLAIN[before?.kind ?? f.kind].toLowerCase() : KIND_PLAIN[f.kind]}</div>
+              <div className="small muted">
+                {fixed ? 'Was: ' + KIND_PLAIN[before?.kind ?? f.kind].toLowerCase()
+                  : f.verification === Verification.NotChecked ? 'Not assessed in the latest check: this is not a pass.'
+                  : KIND_PLAIN[f.kind]}
+                {failing && f.disposition === Disposition.Accepted && ' · Accepted by the client, but the property still fails.'}
+              </div>
 
               {(d?.level ?? before?.level) && (
                 <div className="small" style={{ marginTop: 4 }} title={d?.method ?? before?.method}>
@@ -460,10 +512,10 @@ export default function AgreementView() {
               )}
               <div className="says">
                 <div><span>The agreement says</span>{d?.expected ?? before?.expected ?? '—'}</div>
-                {f.status === 4 && before ? (
-                  <div><span>The code did → now does</span>{before.actual} → {d?.actual ?? 'removed'}</div>
+                {fixed && before ? (
+                  <div><span>The code did → now does</span>{before.actual} → {d?.actual ?? '—'}</div>
                 ) : (
-                  <div><span>The code does</span>{d?.actual ?? (f.detailsHash === ZERO_BYTES32 ? 'No longer in the code' : '—')}</div>
+                  <div><span>The code does</span>{d?.actual ?? before?.actual ?? '—'}</div>
                 )}
               </div>
 
@@ -478,7 +530,7 @@ export default function AgreementView() {
                 </ul>
               )}
 
-              {role && f.status !== 4 && (
+              {role && (
                 <div className="actions">
                   <input value={note} onChange={(e) => setNotes({ ...notes, [f.key]: e.target.value })} placeholder="Add a note (optional, required to disagree)" />
                   <div className="row">
@@ -488,7 +540,8 @@ export default function AgreementView() {
                     <button className="ghost" onClick={() => decide(f, DecisionType.Dispute)} disabled={!!busy || !note.trim()}>I disagree</button>
                   </div>
                   <span className="small muted">
-                    You sign with your wallet. The signature covers this exact finding, so nobody can later claim you saw something else. No signature can mark it fixed; only Chainlink can.
+                    You sign with your wallet; the signature covers this exact finding. Decisions never change the technical result:
+                    only a Chainlink check in which this same property passes can verify a fix.
                   </span>
                 </div>
               )}
@@ -498,7 +551,11 @@ export default function AgreementView() {
                   <div>Evidence hash (what signatures cover): {f.evidenceHash}</div>
                   {(d?.method ?? before?.method) && <div>How it was checked: {d?.method ?? before?.method}</div>}
                   <div>Details hash on-chain: {f.detailsHash} {d && '✓ matches the off-chain report'}</div>
-                  <div>First found in check #{f.firstCheck}, last checked in #{f.lastCheck}{f.resolvedInCheck ? `, fixed in #${f.resolvedInCheck}` : ''}</div>
+                  <div>
+                    First assessed in check #{f.firstCheck}, last assessed in #{f.lastCheck}
+                    {f.lastFailedCheck ? `, last failed in #${f.lastFailedCheck}` : ''}
+                    {f.fixVerifiedInCheck ? `, fix verified in #${f.fixVerifiedInCheck}` : ''}
+                  </div>
                   {ds.map((x, i) => <div key={i}>Signature by {x.signer}: {x.signature.slice(0, 42)}…</div>)}
                 </div>
               )}
@@ -556,20 +613,26 @@ export default function AgreementView() {
           <h2>The contracts</h2>
           <div className="panel small stack">
             <div>
-              <b>Escrow contract</b>: holds the money and is what Chainlink checks.
+              <b>Escrow contract</b>: what Chainlink checks, and what the client funds once approved.
               <ol style={{ margin: '0.25rem 0 0' }}>
                 {history.map((h, i) => (
                   <li key={i}>
                     <a className="mono" href={`${EXPLORER}/address/${h}#code`} target="_blank">{shortAddr(h)}</a>{' '}
-                    {i === history.length - 1 ? <span className="badge tone-info">in use</span> : <span className="muted">replaced</span>}
+                    {i === history.length - 1 ? <span className="badge tone-info">approved</span> : <span className="muted">replaced</span>}
                   </li>
                 ))}
               </ol>
               {pending && <div>Proposed replacement <code>{shortAddr(a.pendingTarget)}</code> <span className="badge tone-warn">waiting for the client</span></div>}
             </div>
             <div>
-              <b>LexDiff record</b>: stores fingerprints (hashes) of the terms, findings and signatures. It never touches the money.
+              <b>LexDiff record</b>: stores fingerprints (hashes) of the agreement, terms, findings and signatures. It never touches the money.
             </div>
+            {agreementDoc && (
+              <details>
+                <summary>The signed agreement document</summary>
+                <pre style={{ whiteSpace: 'pre-wrap' }}>{agreementDoc.text}</pre>
+              </details>
+            )}
             <div>
               <b>Checked by</b>: Chainlink CRE{' '}
               {isMock ? <span className="badge tone-warn">simulation</span> : <span className="badge tone-ok">production forwarder</span>}
@@ -580,6 +643,8 @@ export default function AgreementView() {
                 <div>Client {a.client}</div>
                 <div>Reviewer {a.reviewer}</div>
                 <div>Developer {a.developer}</div>
+                <div>Freelancer {a.freelancer}</div>
+                <div>Agreement document fingerprint {a.agreementHash} {agreementDoc ? '✓' : '(document unavailable)'}</div>
                 <div>Terms fingerprint {a.termsHash} · <a href={a.termsURI} target="_blank">terms</a></div>
                 <div>Forwarder {a.verifier.forwarder}</div>
                 {checks.map((c, i) => <div key={i}>Check #{i + 1}: source {c.codeHash} · report {c.reportHash}</div>)}

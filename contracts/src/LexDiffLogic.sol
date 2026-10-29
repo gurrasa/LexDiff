@@ -11,7 +11,7 @@ import {ILexDiff} from "./ILexDiff.sol";
 library LexDiffLogic {
     /// @notice Everything recorded for one agreement.
     struct Ledger {
-        address[] history; // contracts that enforced the agreement, oldest first
+        address[] history; // contracts approved by the client, oldest first
         ILexDiff.Check[] checks;
         bytes32[] keys;
         mapping(bytes32 => ILexDiff.Finding) findings;
@@ -29,8 +29,8 @@ library LexDiffLogic {
 
     /// @dev report = abi.encode(uint256 agreementId, address target, bytes32 codeHash, bytes32 termsHash,
     ///                          bytes32 reportHash, FindingInput[])
-    ///      Each report is a complete snapshot: a previously recorded finding that is absent from the report
-    ///      no longer exists in the code (e.g. a removed admin function) and is treated as a match.
+    ///      Every input carries an explicit result. A previously recorded property that is absent from the
+    ///      report was not assessed: it becomes NotChecked and is never treated as fixed.
     function applyReport(ILexDiff.Agreement storage a, Ledger storage l, bytes calldata metadata, bytes calldata report)
         external
     {
@@ -49,19 +49,23 @@ library LexDiffLogic {
 
         uint32 checkNo = uint32(l.checks.length + 1);
         bytes32 checkContext = keccak256(abi.encode(agreementId, checkNo, target, codeHash, termsHash, reportHash));
-        uint16 nonMatch;
+        uint16[4] memory counts; // indexed by Verification
 
         for (uint256 i; i < inputs.length; ++i) {
-            if (inputs[i].kind != ILexDiff.Kind.Match) ++nonMatch;
+            ILexDiff.Verification result = inputs[i].result;
+            if (result == ILexDiff.Verification.NotChecked) revert ILexDiff.InvalidResult(inputs[i].key);
+            ++counts[uint8(result)];
             l.lastSeen[inputs[i].key] = checkNo;
             _applyFinding(l, agreementId, checkNo, checkContext, inputs[i]);
         }
 
-        // Snapshot semantics: anything not reported this time is gone from the code.
+        // Properties not assessed this time keep their history but lose their current result.
         for (uint256 i; i < l.keys.length; ++i) {
             bytes32 key = l.keys[i];
-            if (l.lastSeen[key] == checkNo || l.findings[key].kind == ILexDiff.Kind.Match) continue;
-            _applyFinding(l, agreementId, checkNo, checkContext, ILexDiff.FindingInput(key, ILexDiff.Kind.Match, 0));
+            ILexDiff.Finding storage f = l.findings[key];
+            if (l.lastSeen[key] == checkNo || f.verification == ILexDiff.Verification.NotChecked) continue;
+            f.verification = ILexDiff.Verification.NotChecked;
+            emit ILexDiff.FindingNotChecked(agreementId, key, checkNo);
         }
 
         l.checks.push(
@@ -73,8 +77,9 @@ library LexDiffLogic {
                 workflowId: workflowId,
                 workflowOwner: workflowOwner,
                 timestamp: uint64(block.timestamp),
-                findingCount: uint16(inputs.length),
-                nonMatchCount: nonMatch
+                passed: counts[uint8(ILexDiff.Verification.Pass)],
+                failed: counts[uint8(ILexDiff.Verification.Fail)],
+                inconclusive: counts[uint8(ILexDiff.Verification.Inconclusive)]
             })
         );
         emit ILexDiff.CheckRecorded(agreementId, checkNo, target, codeHash, reportHash);
@@ -103,42 +108,59 @@ library LexDiffLogic {
         bytes32 checkContext,
         ILexDiff.FindingInput memory input
     ) private {
-        bytes32 evidenceHash = keccak256(abi.encode(checkContext, input.key, input.kind, input.detailsHash));
+        bytes32 evidenceHash =
+            keccak256(abi.encode(checkContext, input.key, input.kind, input.result, input.detailsHash));
         ILexDiff.Finding storage f = l.findings[input.key];
 
         if (f.firstCheck == 0) {
             l.keys.push(input.key);
             f.key = input.key;
             f.firstCheck = checkNo;
-            if (input.kind != ILexDiff.Kind.Match) {
-                f.status = ILexDiff.Status.Open;
+        }
+
+        if (input.result == ILexDiff.Verification.Fail) {
+            if (f.remediation == ILexDiff.Remediation.FixVerified) {
+                // A verified fix regressed.
+                f.remediation = ILexDiff.Remediation.Reopened;
+                emit ILexDiff.FindingReopened(agreementId, input.key, checkNo, evidenceHash);
+            } else if (f.remediation == ILexDiff.Remediation.FixProposed) {
+                // The proposed replacement did not fix it: the fix is still required.
+                f.remediation = ILexDiff.Remediation.Required;
+            }
+            if (f.verification != ILexDiff.Verification.Fail) {
                 f.openedAt = uint64(block.timestamp);
-                emit ILexDiff.FindingOpened(agreementId, input.key, input.kind, evidenceHash);
+                emit ILexDiff.FindingFailed(agreementId, input.key, input.kind, evidenceHash);
             }
-        } else if (input.kind == ILexDiff.Kind.Match) {
+            f.lastFailedCheck = checkNo;
+        } else if (input.result == ILexDiff.Verification.Pass && f.lastFailedCheck != 0) {
+            // Only an explicit Pass of a property that failed before, with a fix in progress, verifies the fix.
+            ILexDiff.Remediation r = f.remediation;
             if (
-                f.status == ILexDiff.Status.Open || f.status == ILexDiff.Status.AcceptedRisk
-                    || f.status == ILexDiff.Status.RemediationRequired
+                r == ILexDiff.Remediation.Required || r == ILexDiff.Remediation.FixProposed
+                    || r == ILexDiff.Remediation.Reopened
             ) {
-                f.status = ILexDiff.Status.Resolved;
-                f.resolvedInCheck = checkNo;
-                f.resolvedAt = uint64(block.timestamp);
-                emit ILexDiff.FindingResolved(agreementId, input.key, checkNo, evidenceHash);
+                f.remediation = ILexDiff.Remediation.FixVerified;
+                f.fixVerifiedInCheck = checkNo;
+                f.fixVerifiedAt = uint64(block.timestamp);
+                emit ILexDiff.FindingFixVerified(agreementId, input.key, checkNo, evidenceHash);
             }
-        } else if (f.status == ILexDiff.Status.None || f.status == ILexDiff.Status.Resolved) {
-            // Regression: something that matched (or was fixed) is wrong again.
-            f.status = ILexDiff.Status.Open;
-            f.assignee = address(0);
-            f.resolvedInCheck = 0;
-            f.resolvedAt = 0;
-            f.openedAt = uint64(block.timestamp);
-            emit ILexDiff.FindingReopened(agreementId, input.key, checkNo, evidenceHash);
         }
 
         f.kind = input.kind;
+        f.verification = input.result;
         f.detailsHash = input.detailsHash;
         f.evidenceHash = evidenceHash;
         f.lastCheck = checkNo;
+    }
+
+    /// @notice The developer proposed a replacement: every fix still required is now awaiting verification.
+    function markFixesProposed(Ledger storage l) external {
+        for (uint256 i; i < l.keys.length; ++i) {
+            ILexDiff.Finding storage f = l.findings[l.keys[i]];
+            if (f.remediation == ILexDiff.Remediation.Required || f.remediation == ILexDiff.Remediation.Reopened) {
+                f.remediation = ILexDiff.Remediation.FixProposed;
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -146,7 +168,7 @@ library LexDiffLogic {
     // ---------------------------------------------------------------------
 
     /// @dev `digest` is the EIP-712 digest computed by the registry with the signer's current nonce.
-    ///      No decision type can resolve a finding.
+    ///      Decisions change Remediation or Disposition, never Verification.
     function applyDecision(
         ILexDiff.Agreement storage a,
         Ledger storage l,
@@ -164,33 +186,30 @@ library LexDiffLogic {
         if (f.evidenceHash != evidenceHash) revert ILexDiff.StaleEvidence(evidenceHash, f.evidenceHash);
         if (!SignatureChecker.isValidSignatureNow(signer, digest, signature)) revert ILexDiff.InvalidSignature(signer);
 
-        bool party = signer == a.client || signer == a.reviewer || signer == a.developer;
+        bool party = signer == a.client || signer == a.reviewer || signer == a.developer || signer == a.freelancer;
+        bool failing = f.verification == ILexDiff.Verification.Fail
+            || f.verification == ILexDiff.Verification.Inconclusive;
+
         if (decision == ILexDiff.DecisionType.AcceptRisk) {
             if (signer != a.client) revert ILexDiff.WrongRole(signer, decision);
-            if (f.status != ILexDiff.Status.Open && f.status != ILexDiff.Status.RemediationRequired) {
-                revert ILexDiff.InvalidTransition(f.status, decision);
-            }
-            f.status = ILexDiff.Status.AcceptedRisk;
-            f.assignee = address(0);
+            if (!failing) revert ILexDiff.NotApplicable(f.verification, decision);
+            f.disposition = ILexDiff.Disposition.Accepted;
         } else if (decision == ILexDiff.DecisionType.RequireRemediation) {
             if (signer != a.reviewer) revert ILexDiff.WrongRole(signer, decision);
-            if (f.status != ILexDiff.Status.Open && f.status != ILexDiff.Status.AcceptedRisk) {
-                revert ILexDiff.InvalidTransition(f.status, decision);
-            }
-            f.status = ILexDiff.Status.RemediationRequired;
+            if (!failing) revert ILexDiff.NotApplicable(f.verification, decision);
+            f.remediation = ILexDiff.Remediation.Required;
             f.assignee = a.developer;
+            if (f.disposition == ILexDiff.Disposition.Undecided) f.disposition = ILexDiff.Disposition.Rejected;
         } else if (decision == ILexDiff.DecisionType.Acknowledge) {
             if (!party) revert ILexDiff.WrongRole(signer, decision);
-            if (f.kind == ILexDiff.Kind.Match && f.status != ILexDiff.Status.Resolved) {
-                revert ILexDiff.InvalidTransition(f.status, decision);
-            }
         } else if (decision == ILexDiff.DecisionType.Dispute) {
-            // Any finding may be disputed, including a match or a resolution the party disagrees with.
+            // Any finding may be disputed, including a Pass the party disagrees with.
             if (!party) revert ILexDiff.WrongRole(signer, decision);
             if (noteHash == bytes32(0)) revert ILexDiff.ReasonRequired();
+            f.disposition = ILexDiff.Disposition.Disputed;
             f.disputedInCheck = f.lastCheck;
         } else {
-            revert ILexDiff.InvalidTransition(f.status, decision);
+            revert ILexDiff.NotApplicable(f.verification, decision);
         }
 
         l.decisions[key].push(
@@ -204,6 +223,6 @@ library LexDiffLogic {
                 atCheck: f.lastCheck
             })
         );
-        emit ILexDiff.DecisionRecorded(agreementId, key, decision, signer, f.status, noteHash);
+        emit ILexDiff.DecisionRecorded(agreementId, key, decision, signer, f.remediation, f.disposition, noteHash);
     }
 }

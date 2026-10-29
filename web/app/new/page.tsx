@@ -106,12 +106,17 @@ export default function NewAgreement() {
           freelancer: { ...draft.parties.freelancer, wallet: roles.freelancer },
         },
       })
+      if (!text.trim()) throw new Error('Paste the full signed agreement in step 1: its fingerprint is signed together with the terms.')
+      // The full document and the structured terms are both bound: the terms alone are not the agreement.
+      const document = await putEvidence({ schema: 'lexdiff/agreement-document@1', text })
       const published = await putEvidence(terms)
       const registration: Registration = {
         client: roles.client as Address,
         reviewer: roles.reviewer as Address,
         developer: roles.developer as Address,
+        freelancer: roles.freelancer as Address,
         target: roles.target as Address,
+        agreementHash: document.hash,
         termsHash: published.hash,
         termsURI: published.uri,
         verifier: {

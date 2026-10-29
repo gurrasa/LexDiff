@@ -1,40 +1,44 @@
 import type { Address } from 'viem'
-import { type Agreement, type Check, type Finding, same } from './registry'
+import { type Agreement, type Check, Disposition, type Finding, Remediation, same, Verification } from './registry'
 
 // Plain-language layer: what each on-chain state means for the people involved.
 
-export type Role = 'client' | 'reviewer' | 'developer'
+export type Role = 'client' | 'reviewer' | 'developer' | 'freelancer'
 
 export const ROLES: Record<Role, { label: string; who: string; can: string }> = {
   client: {
     label: 'Client',
-    who: 'Pays into the escrow.',
-    can: 'Can knowingly accept a risk, and must approve any replacement contract.',
+    who: 'Will fund the escrow.',
+    can: 'Can knowingly accept a failing property as a risk, and approves which contract to fund.',
   },
   reviewer: {
     label: 'Reviewer',
     who: 'Legal counsel. Approved the terms.',
-    can: 'Can require the developer to fix an issue.',
+    can: 'Can require the developer to fix a failing property.',
   },
   developer: {
     label: 'Developer',
     who: 'Wrote the smart contract.',
-    can: 'Fixes issues and proposes the corrected contract.',
+    can: 'Fixes properties and proposes the corrected contract.',
+  },
+  freelancer: {
+    label: 'Freelancer',
+    who: 'Gets paid from the escrow.',
+    can: 'Can confirm having seen a finding, or dispute it.',
   },
 }
 
+const ALL: Role[] = ['client', 'reviewer', 'developer', 'freelancer']
+
 export const rolesOf = (a: Agreement, account?: Address | null): Role[] =>
-  account
-    ? (['client', 'reviewer', 'developer'] as Role[]).filter((r) => same(account, a[r]))
-    : []
+  account ? ALL.filter((r) => same(account, a[r])) : []
 
 export const roleNames = (a: Agreement, account: string) =>
-  (['client', 'reviewer', 'developer'] as Role[])
-    .filter((r) => same(account, a[r]))
+  ALL.filter((r) => same(account, a[r]))
     .map((r) => ROLES[r].label.toLowerCase())
     .join(' & ') || 'someone'
 
-/** What the code does compared with the agreement. */
+/** What the comparison observed. */
 export const KIND_PLAIN = [
   'Matches the agreement',
   'The code does it differently',
@@ -42,16 +46,13 @@ export const KIND_PLAIN = [
   'The code gives someone a power the agreement does not',
 ] as const
 
-/** Where the finding stands in the accountability process. */
-export const STATUS_PLAIN = [
-  'Matches',
-  'Waiting for a decision',
-  'Client accepted this risk',
-  'Developer must fix this',
-  'Fixed: confirmed by Chainlink',
-] as const
+export const isFailing = (f: Finding) => f.verification === Verification.Fail || f.verification === Verification.Inconclusive
 
-export const STEPS = ['Agreement signed', 'Code checked', 'Decisions', 'Fix', 'Re-check', 'Ready'] as const
+/** A failing property nobody has decided on yet. */
+const undecided = (f: Finding) =>
+  isFailing(f) && f.remediation === Remediation.None && f.disposition === Disposition.Undecided
+
+export const STEPS = ['Agreement signed', 'Code checked', 'Decisions', 'Fix', 'Re-check', 'Decided'] as const
 
 export type Stage = {
   step: number
@@ -60,12 +61,25 @@ export type Stage = {
   waitingFor: Role | 'chainlink' | null
 }
 
+export type Summary = { fixed: number; accepted: number; disputed: number; failing: number; notChecked: number }
+
+export const summarize = (findings: Finding[]): Summary => ({
+  fixed: findings.filter((f) => f.remediation === Remediation.FixVerified).length,
+  accepted: findings.filter((f) => isFailing(f) && f.disposition === Disposition.Accepted).length,
+  disputed: findings.filter((f) => f.disposition === Disposition.Disputed).length,
+  failing: findings.filter(isFailing).length,
+  notChecked: findings.filter((f) => f.verification === Verification.NotChecked).length,
+})
+
 /** Derives where the agreement is in the journey, and who has to act next. */
 export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Stage {
   const lastCheck = checks[checks.length - 1]
-  const open = findings.filter((f) => f.status === 1).length
-  const toFix = findings.filter((f) => f.status === 3).length
+  const toDecide = findings.filter(undecided).length
+  const toFix = findings.filter(
+    (f) => f.remediation === Remediation.Required || f.remediation === Remediation.Reopened,
+  ).length
   const pending = a.pendingTarget !== '0x0000000000000000000000000000000000000000'
+  const s = summarize(findings)
 
   if (!lastCheck) {
     return {
@@ -78,16 +92,16 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   if (!same(lastCheck.target, a.target)) {
     return {
       step: 4,
-      title: 'Chainlink needs to check the new contract',
-      detail: 'The client approved a corrected contract. Only a new Chainlink check can confirm what was actually fixed.',
+      title: 'Chainlink needs to check the approved contract',
+      detail: 'Only a new check can show which properties now pass. A fix counts only when the same property explicitly passes.',
       waitingFor: 'chainlink',
     }
   }
-  if (open > 0) {
+  if (toDecide > 0) {
     return {
       step: 2,
-      title: `${open} issue${open > 1 ? 's' : ''} waiting for a decision`,
-      detail: 'For each issue, the reviewer can require the developer to fix it, or the client can knowingly accept the risk. Every decision is signed.',
+      title: `${toDecide} failing propert${toDecide > 1 ? 'ies need' : 'y needs'} a decision`,
+      detail: 'For each one, the reviewer can require a fix, or the client can knowingly accept the risk. Accepting does not make it pass. Every decision is signed.',
       waitingFor: 'reviewer',
     }
   }
@@ -95,22 +109,30 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
     return {
       step: 3,
       title: 'The client needs to approve the corrected contract',
-      detail: 'The developer proposed a new contract. The client holds the funds, so only the client can approve the switch.',
+      detail: 'Approving chooses which contract the client will fund. It does not move any money; the next check reports where the funds actually are.',
       waitingFor: 'client',
     }
   }
   if (toFix > 0) {
     return {
       step: 3,
-      title: `The developer needs to fix ${toFix} issue${toFix > 1 ? 's' : ''}`,
-      detail: 'Fix the code, deploy the corrected contract, and propose it here. Claiming it is fixed is not enough: Chainlink will check.',
+      title: `The developer needs to fix ${toFix} propert${toFix > 1 ? 'ies' : 'y'}`,
+      detail: 'Fix the code, deploy the corrected contract, and propose it here. Saying it is fixed is not enough: Chainlink checks the same properties again.',
       waitingFor: 'developer',
     }
   }
+  const remaining = [
+    s.accepted && `${s.accepted} still failing with the risk accepted by the client`,
+    s.disputed && `${s.disputed} disputed`,
+    s.notChecked && `${s.notChecked} not checked in the latest run`,
+  ].filter(Boolean)
   return {
     step: 5,
-    title: 'Every issue is fixed or knowingly accepted',
-    detail: 'The client knows exactly what the contract does before funding it, and there is a signed record if anything is disputed later.',
+    title: s.failing === 0 ? 'Every checked property passes' : 'Every failing property has a decision',
+    detail:
+      `${s.fixed} fix${s.fixed === 1 ? '' : 'es'} verified by Chainlink.` +
+      (remaining.length ? ` Remaining: ${remaining.join('; ')}.` : '') +
+      ' This is a record of what was checked and decided, not a guarantee that the contract is secure.',
     waitingFor: null,
   }
 }

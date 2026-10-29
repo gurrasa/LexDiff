@@ -4,9 +4,13 @@ import { canonicalize, type EscrowTerms } from './terms.ts'
 
 // Deterministic agreement-vs-code comparison. Pure functions only: same inputs, same findings, on every node.
 
-// Mirrors LexDiffRegistry.Kind
+// Mirrors ILexDiff.Kind: what the comparison observed.
 export const Kind = { Match: 0, Mismatch: 1, Missing: 2, HiddenPower: 3 } as const
 export type Kind = (typeof Kind)[keyof typeof Kind]
+
+// Mirrors ILexDiff.Verification: the explicit result of assessing one property (NotChecked is never reported).
+export const Result = { Pass: 1, Fail: 2, Inconclusive: 3 } as const
+export type Result = (typeof Result)[keyof typeof Result]
 
 /**
  * How a finding was established. Kept separate from Kind: a structural Match is weaker evidence than a value Match.
@@ -23,6 +27,7 @@ export type Finding = {
 	actual: string
 	/** keccak256 of canonical {clause, expected, actual}: the only part of the details that goes on-chain */
 	detailsHash: `0x${string}`
+	result: Result
 	level: Level
 	method: string
 }
@@ -102,7 +107,17 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 	let level: Level = 'value'
 	let method = ''
 	const push = (id: string, kind: Kind, clause: string, expected: string, actual: string) =>
-		findings.push({ key: findingKey(id), kind, clause, expected, actual, detailsHash: detailsHash(clause, expected, actual), level, method })
+		findings.push({
+			key: findingKey(id),
+			kind,
+			result: kind === Kind.Match ? Result.Pass : Result.Fail,
+			clause,
+			expected,
+			actual,
+			detailsHash: detailsHash(clause, expected, actual),
+			level,
+			method,
+		})
 
 	level = 'value'
 	method = 'Read from the deployed contract on Sepolia (getter found in the verified ABI)'
@@ -213,3 +228,30 @@ export const coverage = (terms: EscrowTerms, findings: Finding[]): Coverage => (
 			: [{ term: 'Refund', text: 'The agreement gives no refund on a missed deadline.', reason: 'Nothing to check.' }]),
 	],
 })
+
+/**
+ * A hidden power that failed before but is absent from this check was removed from the code. Report that as an
+ * explicit Pass of the same property: the registry never treats a missing property as fixed.
+ */
+export const removedPowers = (
+	previous: readonly { key: `0x${string}`; kind: number; verification: number }[],
+	current: Finding[],
+): Finding[] => {
+	const seen = new Set(current.map((f) => f.key.toLowerCase()))
+	const clause = 'Admin power (removed)'
+	const expected = 'not granted by agreement'
+	const actual = 'function no longer present in the verified source'
+	return previous
+		.filter((p) => p.kind === Kind.HiddenPower && p.verification === Result.Fail && !seen.has(p.key.toLowerCase()))
+		.map((p) => ({
+			key: p.key,
+			kind: Kind.Match,
+			result: Result.Pass,
+			clause,
+			expected,
+			actual,
+			detailsHash: detailsHash(clause, expected, actual),
+			level: 'structural' as const,
+			method: 'Analysed the verified source: the privileged function found earlier is gone',
+		}))
+}
