@@ -22,6 +22,13 @@ export type SourceAnalysis = {
 	codeHash: `0x${string}`
 	abi: AbiFunction[]
 	privileged: PrivilegedFunction[]
+	refunds: RefundFunction[]
+}
+
+export type RefundFunction = {
+	name: string
+	checksDeadline: boolean
+	paysClient: boolean
 }
 
 export type EtherscanSourceResult = {
@@ -145,6 +152,32 @@ export const privilegedFunctions = (body: string): PrivilegedFunction[] => {
 	return out
 }
 
+const REFUND_NAME = /refund|reclaim|cancel|withdrawdeposit|clawback/i
+
+/** Structural evidence that a refund-like function checks time and transfers value to the client. */
+export const refundFunctions = (body: string): RefundFunction[] => {
+	const out: RefundFunction[] = []
+	const fn = /\bfunction\s+([A-Za-z_]\w*)\s*\(/g
+	for (let m = fn.exec(body); m; m = fn.exec(body)) {
+		if (!REFUND_NAME.test(m[1])) continue
+		const open = body.indexOf('{', m.index + m[0].length)
+		const semicolon = body.indexOf(';', m.index + m[0].length)
+		if (open === -1 || (semicolon !== -1 && semicolon < open)) continue
+		const close = matchBrace(body, open)
+		const fnBody = body.slice(open + 1, close)
+		out.push({
+			name: m[1],
+			checksDeadline:
+				/block\.timestamp/.test(fnBody) && /deadline|deliveryPeriod|deliveryWindow|fundedAt|dueAt/i.test(fnBody),
+			paysClient:
+				/\b(safeTransfer|transfer)\s*\(\s*client\b/.test(fnBody) ||
+				/\bclient\b\s*\.\s*(call|send|transfer)\b/.test(fnBody),
+		})
+		fn.lastIndex = close
+	}
+	return out
+}
+
 export const summarizeAbi = (abiJson: string): AbiFunction[] =>
 	(JSON.parse(abiJson) as Array<Record<string, any>>)
 		.filter((item) => item.type === 'function')
@@ -165,5 +198,6 @@ export const analyzeSource = (result: EtherscanSourceResult): SourceAnalysis => 
 		codeHash: keccak256(toBytes(result.SourceCode)),
 		abi: summarizeAbi(result.ABI),
 		privileged: privilegedFunctions(body),
+		refunds: refundFunctions(body),
 	}
 }

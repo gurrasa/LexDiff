@@ -35,13 +35,19 @@ contract LexDiffRegistryTest is Test {
         vm.warp(1_800_000_000);
         client = vm.addr(clientPk);
         reviewer = vm.addr(reviewerPk);
+<<<<<<< HEAD
         developer = vm.addr(developerPk);
         registry = new LexDiffRegistry();
         id = _register(_registration(0));
+=======
+        registry = new LexDiffRegistry();
+        id = _register();
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     }
 
     // --- helpers ---------------------------------------------------------
 
+<<<<<<< HEAD
     function _registration(uint256 supersedes) internal view returns (ILexDiff.Registration memory r) {
         r = ILexDiff.Registration({
             client: client,
@@ -59,6 +65,55 @@ contract LexDiffRegistryTest is Test {
     function _signDigest(uint256 pk, bytes32 digest) internal pure returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
         return abi.encodePacked(r, s, v);
+=======
+    function _register() internal returns (uint256) {
+        uint256 deadline = block.timestamp + 1 days;
+        bytes32 clientDigest = registry.agreementApprovalDigest(
+            client, reviewer, developer, escrowV1, forwarder, TERMS, "ipfs://terms", "Freelance escrow", 0, deadline
+        );
+        bytes32 reviewerDigest = registry.agreementApprovalDigest(
+            client, reviewer, developer, escrowV1, forwarder, TERMS, "ipfs://terms", "Freelance escrow", 0, deadline
+        );
+        (uint8 cv, bytes32 cr, bytes32 cs) = vm.sign(clientPk, clientDigest);
+        (uint8 rv, bytes32 rr, bytes32 rs) = vm.sign(reviewerPk, reviewerDigest);
+        return registry.registerAgreement(
+            client,
+            reviewer,
+            developer,
+            escrowV1,
+            forwarder,
+            TERMS,
+            "ipfs://terms",
+            "Freelance escrow",
+            deadline,
+            abi.encodePacked(cr, cs, cv),
+            abi.encodePacked(rr, rs, rv)
+        );
+    }
+
+    function _v1Findings() internal pure returns (LexDiffRegistry.FindingInput[] memory f) {
+        f = new LexDiffRegistry.FindingInput[](4);
+        f[0] = _finding(AMOUNT, LexDiffRegistry.Kind.Match);
+        f[1] = _finding(DEADLINE, LexDiffRegistry.Kind.Mismatch);
+        f[2] = _finding(REFUND, LexDiffRegistry.Kind.Missing);
+        f[3] = _finding(WITHDRAW, LexDiffRegistry.Kind.HiddenPower);
+    }
+
+    function _v2Findings() internal pure returns (LexDiffRegistry.FindingInput[] memory f) {
+        f = new LexDiffRegistry.FindingInput[](4);
+        f[0] = _finding(AMOUNT, LexDiffRegistry.Kind.Match);
+        f[1] = _finding(DEADLINE, LexDiffRegistry.Kind.Match);
+        f[2] = _finding(REFUND, LexDiffRegistry.Kind.Match);
+        f[3] = _finding(WITHDRAW, LexDiffRegistry.Kind.HiddenPower);
+    }
+
+    function _finding(bytes32 key, LexDiffRegistry.Kind kind)
+        internal
+        pure
+        returns (LexDiffRegistry.FindingInput memory)
+    {
+        return LexDiffRegistry.FindingInput(key, kind, keccak256(abi.encode(key, kind)));
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     }
 
     function _register(ILexDiff.Registration memory r) internal returns (uint256) {
@@ -86,7 +141,11 @@ contract LexDiffRegistryTest is Test {
 
     function _report(address target, bytes32 codeHash, ILexDiff.FindingInput[] memory f) internal {
         vm.prank(forwarder);
+<<<<<<< HEAD
         registry.onReport("", abi.encode(id, target, codeHash, TERMS, keccak256(abi.encode(codeHash)), f));
+=======
+        registry.onReport("", abi.encode(id, target, codeHash, TERMS, keccak256(abi.encode(codeHash, f)), f));
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     }
 
     function _sign(uint256 pk, bytes32 key, ILexDiff.DecisionType d, bytes32 noteHash)
@@ -101,6 +160,7 @@ contract LexDiffRegistryTest is Test {
         sig = _signDigest(pk, digest);
     }
 
+<<<<<<< HEAD
     function _decide(uint256 pk, bytes32 key, ILexDiff.DecisionType d, string memory note) internal {
         bytes32 noteHash = bytes(note).length == 0 ? bytes32(0) : _d(note);
         (bytes32 evidence, bytes memory sig) = _sign(pk, key, d, noteHash);
@@ -109,6 +169,18 @@ contract LexDiffRegistryTest is Test {
 
     function _status(bytes32 key) internal view returns (uint8) {
         return uint8(registry.getFinding(id, key).status);
+=======
+    function _decide(uint256 pk, bytes32 key, LexDiffRegistry.DecisionType d, string memory note) internal {
+        (bytes32 evidence, bytes memory sig) = _sign(pk, key, d, note);
+        registry.submitDecision(id, key, d, evidence, keccak256(bytes(note)), block.timestamp + 1 days, vm.addr(pk), sig);
+    }
+
+    // --- tests -----------------------------------------------------------
+
+    function test_onlyForwarderCanReport() public {
+        vm.expectRevert(abi.encodeWithSelector(LexDiffRegistry.NotForwarder.selector, address(this)));
+        registry.onReport("", abi.encode(id, escrowV1, bytes32(0), TERMS, bytes32(0), _v1Findings()));
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     }
 
     function _moveToV2() internal {
@@ -211,11 +283,19 @@ contract LexDiffRegistryTest is Test {
 
     function test_rejectsStaleTargetAndWrongTerms() public {
         vm.prank(forwarder);
+<<<<<<< HEAD
         vm.expectRevert(abi.encodeWithSelector(ILexDiff.StaleTarget.selector, escrowV2, escrowV1));
         registry.onReport("", abi.encode(id, escrowV2, bytes32(0), TERMS, bytes32(0), _v1Findings()));
 
         vm.prank(forwarder);
         vm.expectRevert(abi.encodeWithSelector(ILexDiff.TermsMismatch.selector, bytes32(0), TERMS));
+=======
+        vm.expectRevert(abi.encodeWithSelector(LexDiffRegistry.StaleTarget.selector, escrowV2, escrowV1));
+        registry.onReport("", abi.encode(id, escrowV2, bytes32(0), TERMS, bytes32(0), _v1Findings()));
+
+        vm.prank(forwarder);
+        vm.expectRevert(abi.encodeWithSelector(LexDiffRegistry.TermsMismatch.selector, bytes32(0), TERMS));
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
         registry.onReport("", abi.encode(id, escrowV1, bytes32(0), bytes32(0), bytes32(0), _v1Findings()));
     }
 
@@ -235,7 +315,15 @@ contract LexDiffRegistryTest is Test {
         assertEq(registry.getDecisions(id, DEADLINE)[1].signer, developer);
         assertEq(registry.getDecisions(id, WITHDRAW)[0].signer, client);
 
+<<<<<<< HEAD
         _moveToV2();
+=======
+        // Developer proposes; the client accepts; only then does CRE re-run.
+        vm.prank(developer);
+        registry.proposeContract(id, escrowV2);
+        vm.prank(client);
+        registry.acceptContract(id);
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
         _report(escrowV2, keccak256("v2"), _v2Findings());
 
         assertEq(_status(DEADLINE), uint8(ILexDiff.Status.Resolved));
@@ -269,8 +357,17 @@ contract LexDiffRegistryTest is Test {
 
     function test_unresolvedFindingStaysOpenAfterRedeploy() public {
         _report(escrowV1, keccak256("v1"), _v1Findings());
+<<<<<<< HEAD
         _decide(reviewerPk, DEADLINE, ILexDiff.DecisionType.RequireRemediation, "fix");
         _moveToV2();
+=======
+        _decide(reviewerPk, DEADLINE, LexDiffRegistry.DecisionType.RequireRemediation, "fix");
+        vm.prank(developer);
+        registry.proposeContract(id, escrowV2);
+        vm.prank(client);
+        registry.acceptContract(id);
+        // Developer "fixed" it, but the code still says 3 days.
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
         _report(escrowV2, keccak256("v2-bad"), _v1Findings());
         assertEq(_status(DEADLINE), uint8(ILexDiff.Status.RemediationRequired));
     }
@@ -281,9 +378,14 @@ contract LexDiffRegistryTest is Test {
         ILexDiff.FindingInput[] memory v2 = _v2Findings();
         for (uint256 i; i < 3; ++i) v3[i] = v2[i];
         _report(escrowV1, keccak256("v3"), v3);
+<<<<<<< HEAD
         ILexDiff.Finding memory f = registry.getFinding(id, WITHDRAW);
         assertEq(uint8(f.status), uint8(ILexDiff.Status.Resolved));
         assertEq(f.detailsHash, bytes32(0));
+=======
+        LexDiffRegistry.Finding memory f = registry.getFinding(id, WITHDRAW);
+        assertEq(uint8(f.status), uint8(LexDiffRegistry.Status.Resolved));
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     }
 
     function test_regressionReopens() public {
@@ -308,18 +410,37 @@ contract LexDiffRegistryTest is Test {
             abi.encodeWithSelector(ILexDiff.WrongRole.selector, reviewer, ILexDiff.DecisionType.AcceptRisk)
         );
         registry.submitDecision(
+<<<<<<< HEAD
             id, WITHDRAW, ILexDiff.DecisionType.AcceptRisk, ev, 0, block.timestamp + 1 days, reviewer, sig
         );
 
         // An outsider cannot even acknowledge.
         uint256 outsiderPk = 0x0B5;
         (ev, sig) = _sign(outsiderPk, WITHDRAW, ILexDiff.DecisionType.Acknowledge, 0);
+=======
+            id, WITHDRAW, LexDiffRegistry.DecisionType.AcceptRisk, ev, keccak256(""), block.timestamp + 1 days, reviewer, sig
+        );
+
+        // Signature from the client but claimed to be the reviewer's.
+        (ev, sig) = _sign(clientPk, DEADLINE, LexDiffRegistry.DecisionType.RequireRemediation, "");
+        vm.expectRevert(LexDiffRegistry.InvalidSignature.selector);
+        registry.submitDecision(
+            id, DEADLINE, LexDiffRegistry.DecisionType.RequireRemediation, ev, keccak256(""), block.timestamp + 1 days, reviewer, sig
+        );
+    }
+
+    function test_nobodyCanResolveByDecision() public {
+        _report(escrowV1, keccak256("v1"), _v1Findings());
+        (bytes32 ev, bytes memory sig) = _sign(clientPk, AMOUNT, LexDiffRegistry.DecisionType.AcceptRisk, "");
+        // A match has nothing to accept.
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
         vm.expectRevert(
             abi.encodeWithSelector(
                 ILexDiff.WrongRole.selector, vm.addr(outsiderPk), ILexDiff.DecisionType.Acknowledge
             )
         );
         registry.submitDecision(
+<<<<<<< HEAD
             id, WITHDRAW, ILexDiff.DecisionType.Acknowledge, ev, 0, block.timestamp + 1 days, vm.addr(outsiderPk), sig
         );
 
@@ -367,6 +488,9 @@ contract LexDiffRegistryTest is Test {
         vm.expectRevert(ILexDiff.ReasonRequired.selector);
         registry.submitDecision(
             id, DEADLINE, ILexDiff.DecisionType.Dispute, ev, 0, block.timestamp + 1 days, client, sig
+=======
+            id, AMOUNT, LexDiffRegistry.DecisionType.AcceptRisk, ev, keccak256(""), block.timestamp + 1 days, client, sig
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
         );
     }
 
@@ -377,12 +501,17 @@ contract LexDiffRegistryTest is Test {
         bytes32 current = registry.getFinding(id, WITHDRAW).evidenceHash;
         vm.expectRevert(abi.encodeWithSelector(ILexDiff.StaleEvidence.selector, ev, current));
         registry.submitDecision(
+<<<<<<< HEAD
             id, WITHDRAW, ILexDiff.DecisionType.AcceptRisk, ev, 0, block.timestamp + 1 days, client, sig
+=======
+            id, WITHDRAW, LexDiffRegistry.DecisionType.AcceptRisk, ev, keccak256("ok"), block.timestamp + 1 days, client, sig
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
         );
     }
 
     function test_signatureCannotBeReplayedOrUsedLate() public {
         _report(escrowV1, keccak256("v1"), _v1Findings());
+<<<<<<< HEAD
         bytes32 ev = registry.getFinding(id, WITHDRAW).evidenceHash;
         ILexDiff.DecisionType accept = ILexDiff.DecisionType.AcceptRisk;
 
@@ -399,5 +528,40 @@ contract LexDiffRegistryTest is Test {
         _decide(reviewerPk, WITHDRAW, ILexDiff.DecisionType.RequireRemediation, "override");
         vm.expectRevert(abi.encodeWithSelector(ILexDiff.InvalidSignature.selector, client));
         registry.submitDecision(id, WITHDRAW, accept, ev, 0, deadline, client, sig);
+=======
+        (bytes32 ev, bytes memory sig) = _sign(clientPk, WITHDRAW, LexDiffRegistry.DecisionType.AcceptRisk, "ok");
+        registry.submitDecision(
+            id, WITHDRAW, LexDiffRegistry.DecisionType.AcceptRisk, ev, keccak256("ok"), block.timestamp + 1 days, client, sig
+        );
+        _decide(reviewerPk, WITHDRAW, LexDiffRegistry.DecisionType.RequireRemediation, "override");
+        vm.expectRevert(LexDiffRegistry.InvalidSignature.selector);
+        registry.submitDecision(
+            id, WITHDRAW, LexDiffRegistry.DecisionType.AcceptRisk, ev, keccak256("ok"), block.timestamp + 1 days, client, sig
+        );
+    }
+
+    function test_contractReplacementRequiresDeveloperThenClient() public {
+        vm.expectRevert(abi.encodeWithSelector(LexDiffRegistry.NotDeveloper.selector, address(this)));
+        registry.proposeContract(id, escrowV2);
+
+        vm.prank(developer);
+        registry.proposeContract(id, escrowV2);
+        vm.prank(reviewer);
+        vm.expectRevert(abi.encodeWithSelector(LexDiffRegistry.NotClient.selector, reviewer));
+        registry.acceptContract(id);
+
+        vm.prank(client);
+        registry.acceptContract(id);
+        assertEq(registry.getAgreement(id).target, escrowV2);
+    }
+
+    function test_acknowledgeAndDisputePreserveStatus() public {
+        _report(escrowV1, keccak256("v1"), _v1Findings());
+        _decide(clientPk, DEADLINE, LexDiffRegistry.DecisionType.Acknowledge, "seen");
+        assertEq(uint8(registry.getFinding(id, DEADLINE).status), uint8(LexDiffRegistry.Status.Open));
+        _decide(reviewerPk, DEADLINE, LexDiffRegistry.DecisionType.Dispute, "comparison is contested");
+        assertEq(uint8(registry.getFinding(id, DEADLINE).status), uint8(LexDiffRegistry.Status.Open));
+        assertEq(registry.getDecisions(id, DEADLINE).length, 2);
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     }
 }

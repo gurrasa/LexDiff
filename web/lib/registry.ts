@@ -25,15 +25,21 @@ export const KIND = [
 export const STATUS = ['—', 'Open', 'Accepted risk', 'Remediation required', 'Resolved'] as const
 export const STATUS_TONE = ['muted', 'bad', 'warn', 'info', 'ok'] as const
 
+<<<<<<< HEAD
 export const DecisionType = { AcceptRisk: 1, RequireRemediation: 2, Acknowledge: 3, Dispute: 4 } as const
 export const DECISION_LABEL = ['—', 'Accepted risk', 'Remediation required', 'Acknowledged', 'Disputed'] as const
 
 export type Verifier = { forwarder: Address; workflowOwner: Address; workflowId: Hex }
+=======
+export const DecisionType = { Acknowledge: 1, AcceptRisk: 2, RequireRemediation: 3, Dispute: 4 } as const
+export const DECISION_LABEL = ['—', 'Acknowledged', 'Accepted risk', 'Remediation required', 'Disputed'] as const
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 
 export type Agreement = {
   client: Address
   reviewer: Address
   developer: Address
+  verifier: Address
   target: Address
   pendingTarget: Address
   termsHash: Hex
@@ -48,7 +54,10 @@ export type Finding = {
   key: Hex
   kind: number
   status: number
+<<<<<<< HEAD
   detailsHash: Hex
+=======
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
   evidenceHash: Hex
   assignee: Address
   firstCheck: number
@@ -64,8 +73,11 @@ export type Check = {
   codeHash: Hex
   termsHash: Hex
   reportHash: Hex
+<<<<<<< HEAD
   workflowId: Hex
   workflowOwner: Address
+=======
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
   timestamp: bigint
   findingCount: number
   nonMatchCount: number
@@ -81,6 +93,7 @@ export type Decision = {
   atCheck: number
 }
 
+<<<<<<< HEAD
 export type Registration = {
   client: Address
   reviewer: Address
@@ -99,6 +112,13 @@ export type ReportDocument = {
   contractName: string
   onchain: Record<string, string>
   findings: { key: Hex; kind: number; clause: string; expected: string; actual: string; detailsHash: Hex }[]
+=======
+export type AgreementEvent = {
+  eventName: string
+  transactionHash: Hex
+  blockNumber: bigint
+  args: Record<string, unknown>
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 }
 
 const read = <T>(functionName: string, args: readonly unknown[] = []) =>
@@ -111,7 +131,25 @@ export const registry = {
   getChecks: (id: bigint) => read<Check[]>('getChecks', [id]),
   getContractHistory: (id: bigint) => read<Address[]>('getContractHistory', [id]),
   getDecisions: (id: bigint, key: Hex) => read<Decision[]>('getDecisions', [id, key]),
+  pendingTarget: (id: bigint) => read<Address>('pendingTargets', [id]),
   nonces: (signer: Address) => read<bigint>('nonces', [signer]),
+  events: async (id: bigint) => {
+    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK || '0')
+    const logs = await publicClient.getContractEvents({
+      address: REGISTRY_ADDRESS,
+      abi: registryAbi,
+      fromBlock,
+      toBlock: 'latest',
+    })
+    return logs
+      .filter((log) => 'args' in log && (log.args as { agreementId?: bigint }).agreementId === id)
+      .map((log) => ({
+        eventName: log.eventName,
+        transactionHash: log.transactionHash,
+        blockNumber: log.blockNumber,
+        args: log.args as Record<string, unknown>,
+      })) as AgreementEvent[]
+  },
 }
 
 // --- Off-chain evidence (content-addressed, verified against on-chain hashes) ----------------
@@ -179,12 +217,18 @@ export const DECISION_TYPES = {
   ],
 } as const
 
+<<<<<<< HEAD
 export const REGISTRATION_TYPES = {
   Registration: [
+=======
+export const AGREEMENT_APPROVAL_TYPES = {
+  AgreementApproval: [
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     { name: 'client', type: 'address' },
     { name: 'reviewer', type: 'address' },
     { name: 'developer', type: 'address' },
     { name: 'target', type: 'address' },
+<<<<<<< HEAD
     { name: 'termsHash', type: 'bytes32' },
     { name: 'termsURI', type: 'string' },
     { name: 'verifier', type: 'Verifier' },
@@ -199,5 +243,16 @@ export const REGISTRATION_TYPES = {
 } as const
 
 export const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase()
+=======
+    { name: 'verifier', type: 'address' },
+    { name: 'termsHash', type: 'bytes32' },
+    { name: 'termsURIHash', type: 'bytes32' },
+    { name: 'titleHash', type: 'bytes32' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'deadline', type: 'uint256' },
+  ],
+} as const
+
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 export const shortAddr = (a: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '')
 export const fmtTime = (ts: bigint) => (ts ? new Date(Number(ts) * 1000).toLocaleString() : '—')

@@ -51,11 +51,18 @@ A redeployed contract is **proposed** by the developer or reviewer and **accepte
 
 ```mermaid
 flowchart LR
+<<<<<<< HEAD
   A[Agreement text] -->|Claude API<br/>structured output| T[Draft terms]
   T -->|counsel reviews| R[Reviewed terms]
   R -->|store| ES[(Evidence store<br/>content-addressed)]
   R -->|client + reviewer sign<br/>registerAgreement| REG[(LexDiffRegistry<br/>Sepolia, hashes only)]
   REG -- CheckRequested --> CRE
+=======
+  A[Agreement text] -->|Claude API<br/>structured output| T[Draft terms JSON]
+  T -->|counsel reviews| R[Reviewed terms<br/>keccak256 = termsHash]
+  R -->|client + reviewer EIP-712 approvals| REG[(LexDiffRegistry<br/>Sepolia)]
+  REG -- CheckRequested event --> CRE
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
   subgraph CRE[Chainlink CRE workflow · deterministic]
     direction TB
     C1[read agreement] --> C2[fetch terms, verify hash]
@@ -63,9 +70,17 @@ flowchart LR
     C3 --> C4[EVM reads of contract state]
     C4 --> C5[compare → findings]
   end
+<<<<<<< HEAD
   CRE -->|full report| ES
   CRE -->|hashes via agreed forwarder| REG
   P[Parties] -->|EIP-712: Acknowledge · Accept risk ·<br/>Remediation required · Dispute| REG
+=======
+  CRE -->|signed report via<br/>Keystone forwarder| REG
+  CLIENT[Client] -->|EIP-712: Accepted risk| REG
+  REV[Reviewer] -->|EIP-712: Remediation required| REG
+  DEV[Developer] -->|propose replacement| CLIENT
+  CLIENT -->|accept replacement → re-check| REG
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 ```
 
 | Path | What it is |
@@ -76,13 +91,28 @@ flowchart LR
 | [web/](web/) | Next.js app: Claude extraction, signing, evidence store (`/api/evidence`), findings dashboard. |
 | [agreements/](agreements/) | The demo agreement and an example of reviewed terms. |
 
+<<<<<<< HEAD
+=======
+### Why the pieces sit where they do
+
+- **AI extraction runs outside CRE.** LLM output is not deterministic enough for DON consensus. Claude produces a *draft* with a verbatim source quote for every term; a human reviews it, and only the reviewed JSON is hashed and registered.
+- **CRE only runs deterministic checks.** Every node fetches the same terms (verified against the on-chain `termsHash`), the same Etherscan source and the same finalized chain state, and runs the same pure comparison. HTTP results use identical-aggregation consensus.
+- **Only CRE can resolve.** No decision type in the registry sets `Resolved`. A finding moves to `Resolved` only when a later CRE report no longer contains the mismatch. If it comes back, it's reopened.
+- **Signatures are bound to evidence.** An EIP-712 decision signs the finding's current `evidenceHash`. If the report changes before the signature is submitted, the signature is rejected. Nobody can claim the client accepted a risk they never saw.
+- **Reports are snapshots.** A finding that disappears from the code (e.g. a removed admin function) is resolved by the next check.
+- **The registry rejects stale reports.** A report must be for the agreement's *current* contract and the registered terms hash.
+- **There is no registry admin.** Every agreement permanently names its own CRE verifier when the client and reviewer approve it.
+- **Only hashes are on-chain.** Finding descriptions, expected/actual values and decision notes remain in the content-addressed evidence store. The registry keeps their hashes, signatures and lifecycle state.
+- **The audit trail is independently inspectable.** The agreement view links every registry event to its Sepolia transaction and exports a JSON case record containing those links.
+
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 ### What the workflow checks (escrow, v1)
 
 | Term | How it's checked |
 |---|---|
 | Client, freelancer, token, amount | A getter found by name and type in the verified ABI, read at the last finalized block |
 | Delivery deadline, review period | Same, compared in seconds (`days × 86400`) |
-| Refund if deadline is missed | A state-changing function named like `refund` / `reclaim` / `cancel` in the verified ABI |
+| Refund if deadline is missed | A refund-like state-changing function must structurally check the deadline and transfer funds to the client |
 | Admin powers | Static analysis of the verified source: external, state-changing functions gated by `onlyOwner`-style modifiers or `msg.sender == owner` checks, grouped by effect (`withdraw-funds`, `pause`, `upgrade`, `modify-terms`, `destroy`). Anything the agreement does not grant is a 🚩 hidden power. |
 
 ## The demo
@@ -98,11 +128,18 @@ flowchart LR
 
 **Then:**
 
+<<<<<<< HEAD
 1. The reviewer signs **Remediation required** on the deadline and the refund. The developer signs **Acknowledge**.
 2. The client signs **Accepted risk** on the owner's withdrawal power. That is now on-chain proof the client saw that exact evidence.
 3. The developer deploys **FreelanceEscrowV2** and proposes it; the client accepts it.
 4. CRE re-runs. The deadline and refund move to **Resolved (verified in check #2)**. The withdrawal power stays **Accepted risk**.
 5. Optionally, a party signs **Dispute** on any finding. It is shown as ⚖️ Disputed, and nothing is rewritten.
+=======
+1. The reviewer signs **Remediation required** on the deadline and the refund. Both are assigned to the developer.
+2. The client signs **Accepted risk** on the owner's withdrawal power. That is now on-chain proof the client was informed.
+3. The developer deploys and proposes **FreelanceEscrowV2**; the client accepts it.
+4. CRE re-runs. Deadline and refund move to **Resolved (verified in check #2)**. The withdrawal power stays **Accepted risk**.
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 
 ## Running it
 
@@ -119,7 +156,11 @@ forge test
 cat deployments/11155111.json
 ```
 
+<<<<<<< HEAD
 Escrows must be **verified on Etherscan** (the script does this), because the workflow reads their source.
+=======
+Each agreement permanently stores its own verifier. For simulation use the Sepolia **MockKeystoneForwarder** `0x15fC6ae953E024d975e77382eEeC56A9101f9F88`; production agreements must name the appropriate Keystone forwarder when both parties sign.
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 
 Why a shell script instead of `forge script`: Sepolia now charges far more gas per byte of deployed code than Foundry's local EVM assumes, so `forge script` estimates fail on-chain. The script uses `cast send`, which asks the Sepolia node for the real estimate. For the same reason the registry's report and decision logic lives in a separately deployed library (`LexDiffLogic`): as one contract it would exceed the 16.7M gas-per-transaction cap (EIP-7825).
 
@@ -132,11 +173,15 @@ npm install
 npm run dev                  # http://localhost:3000
 ```
 
+<<<<<<< HEAD
 Open **New agreement**:
 
 1. *Load demo agreement* → *Extract terms with Claude* → review.
 2. Fill the roles. *Use my wallet* fills every role with the connected wallet, for a single-person demo. Set the contract to `escrowV1`. The verifier defaults to the Sepolia MockKeystoneForwarder.
 3. *Publish terms* → *Sign as reviewer* → *Sign as client* → *Register*.
+=======
+Open **New agreement** → *Load demo agreement* → *Extract terms with Claude* → review → fill the roles, target and verifier → publish → collect the client and reviewer approvals → register on-chain.
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 
 No Anthropic key? Paste [agreements/freelance-escrow.terms.example.json](agreements/freelance-escrow.terms.example.json) into the terms box instead.
 
@@ -154,6 +199,7 @@ cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \
   --non-interactive --trigger-index 0 --http-payload '{"agreementId":1}'
 ```
 
+<<<<<<< HEAD
 Keep the web app running: CRE fetches the terms from it and posts the report document to its evidence store.
 
 **Running the check from the browser (local demo):** set `ENABLE_LOCAL_CRE=true` in `web/.env.local`. The agreement page then shows a **Run the Chainlink check** button that runs the same `cre workflow simulate` command and streams its log. Never enable this on a hosted deployment.
@@ -171,6 +217,19 @@ The agreement page shows where you are (*Agreement signed → Code checked → D
 3. As client: *I accept this risk* on the hidden power.
 4. As developer: propose the corrected contract (`escrowV2` is prefilled). As client: approve it.
 5. **Run the Chainlink check** again. The deadline and refund show **Fixed: confirmed by Chainlink**.
+=======
+Trigger index `0` is the HTTP trigger; `1` is the EVM log trigger on `CheckRequested` (use `--evm-tx-hash <registerAgreement or acceptContract tx> --evm-event-index <n>`).
+
+The terms and evidence endpoints point at the web app (`PUBLIC_BASE_URL`, default `http://localhost:3000`), which works for local simulation. Set `EVIDENCE_DIR` to a persistent mounted volume in hosted environments; an ephemeral serverless filesystem is not suitable. The hash checks make the storage host irrelevant to integrity.
+
+### 4. Finish the demo
+
+1. Refresh the agreement page: findings appear with status **Open**.
+2. As reviewer: open the deadline and refund findings → *Sign: Remediation required*.
+3. As client: open the hidden power → *Sign: Accepted risk*.
+4. As developer: propose `escrowV2`; as client: accept the proposal.
+5. Run the simulate command again. Deadline and refund show **Resolved**.
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 
 ## Tests
 

@@ -39,6 +39,7 @@ import { ERC20_ABI, REGISTRY_ABI, REPORT_PARAMS } from './abi.ts'
 import { compare, type Finding, GETTER_CANDIDATES, type GetterTerm, type OnchainValues, resolveGetters } from './compare.ts'
 import { buildReport } from './report.ts'
 import { analyzeSource, type EtherscanSourceResult, type SourceAnalysis } from './source-analysis.ts'
+import { buildEvidenceReport } from './report.ts'
 import { canonicalize, type EscrowTerms, escrowTermsSchema } from './terms.ts'
 
 const configSchema = z.object({
@@ -48,9 +49,13 @@ const configSchema = z.object({
 	etherscanChainId: z.string(),
 	evidenceStoreUrl: z.string(),
 	gasLimit: z.string(),
+<<<<<<< HEAD
 	// Sepolia finality lags ~15 minutes. "latest" lets the demo check a contract right after it was
 	// registered or replaced; production workflows should read "finalized" state.
 	readFinalized: z.boolean(),
+=======
+	evidenceStoreUrl: z.string(),
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 })
 
 type Config = z.infer<typeof configSchema>
@@ -66,6 +71,23 @@ const fetchTerms = (requester: HTTPSendRequester, termsURI: string): string => {
 	const response = requester.sendRequest({ url: termsURI, method: 'GET' }).result()
 	if (!ok(response)) throw new Error(`terms fetch failed: HTTP ${response.statusCode}`)
 	return canonicalize(escrowTermsSchema.parse(JSON.parse(text(response))))
+}
+
+const storeEvidence = (
+	requester: HTTPSendRequester,
+	url: string,
+	canonical: string,
+): string => {
+	const response = requester
+		.sendRequest({
+			url,
+			method: 'POST',
+			body: Buffer.from(new TextEncoder().encode(canonical)).toString('base64'),
+			headers: { 'Content-Type': 'application/json' },
+		})
+		.result()
+	if (!ok(response)) throw new Error(`evidence store failed: HTTP ${response.statusCode}`)
+	return text(response)
 }
 
 /** Fetches verified source from Etherscan and returns the deterministic analysis (not the raw source). */
@@ -189,6 +211,7 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	const findings = compare(terms, analysis, onchain)
 	for (const f of findings) runtime.log(`  [${['MATCH', 'MISMATCH', 'MISSING', 'HIDDEN'][f.kind]}] ${f.clause}: expected ${f.expected}, actual ${f.actual}`)
 
+<<<<<<< HEAD
 	// 6. Full report off-chain (it names vulnerabilities); only hashes go on-chain.
 	const report = buildReport(agreementId, a.target, a.termsHash, analysis, onchain, findings)
 	http
@@ -201,13 +224,46 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	runtime.log(`Report document stored (${report.hash})`)
 
 	// 7. Signed report -> agreed Keystone forwarder -> LexDiffRegistry.onReport
+=======
+	// 6. Canonical evidence report. Its content hash is anchored with the check on-chain.
+	const evidence = buildEvidenceReport({
+		agreementId: agreementId.toString(),
+		target: a.target,
+		codeHash: analysis.codeHash,
+		termsHash: a.termsHash,
+		findings,
+	})
+	runtime.log(`Evidence report ${evidence.hash}`)
+	const stored = JSON.parse(
+		http
+			.sendRequest(runtime, storeEvidence, consensusIdenticalAggregation<string>())(
+				config.evidenceStoreUrl,
+				evidence.canonical,
+			)
+			.result(),
+	) as { hash?: string }
+	if (stored.hash?.toLowerCase() !== evidence.hash.toLowerCase()) {
+		throw new Error(`evidence store returned ${stored.hash || 'no hash'}, expected ${evidence.hash}`)
+	}
+
+	// 7. Signed report -> Keystone forwarder -> LexDiffRegistry.onReport
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 	const payload = encodeAbiParameters(REPORT_PARAMS, [
 		agreementId,
 		a.target,
 		analysis.codeHash,
 		a.termsHash,
+<<<<<<< HEAD
 		report.hash,
 		findings.map((f: Finding) => ({ key: f.key, kind: f.kind, detailsHash: f.detailsHash })),
+=======
+		evidence.hash,
+		findings.map((f: Finding) => ({
+			key: f.key,
+			kind: f.kind,
+			evidenceHash: keccak256(toBytes(canonicalize({ reportHash: evidence.hash, key: f.key, kind: f.kind }))),
+		})),
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 	])
 	const signed = runtime.report(prepareReportRequest(payload)).result()
 	const reply = evm

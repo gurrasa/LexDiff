@@ -5,6 +5,7 @@ import { compare, detailsHash, findingKey, Kind, resolveGetters } from './compar
 import { buildReport } from './report.ts'
 import { analyzeSource, privilegedFunctions, stripComments } from './source-analysis.ts'
 import { canonicalize, escrowTermsSchema, termsHash } from './terms.ts'
+import { buildEvidenceReport } from './report.ts'
 
 const root = new URL('../../', import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, root), 'utf8')
@@ -72,6 +73,17 @@ test('V2 fixes deadline and refund, keeps the withdrawal power', () => {
 	assert.equal(f['Admin power: withdraw-funds'].kind, Kind.HiddenPower)
 })
 
+test('refund must check the deadline and pay the client', () => {
+	const badSource = `contract BadEscrow {
+		function refund() external { token.safeTransfer(freelancer, amount); }
+	}`
+	const analysis = analyzeSource({ SourceCode: badSource, ABI: abiFor(true), ContractName: 'BadEscrow' })
+	const f = byClause(compare(terms, analysis, onchain(30n)))
+	assert.equal(f['Refund if deadline is missed'].kind, Kind.Mismatch)
+	assert.match(f['Refund if deadline is missed'].actual, /deadline check/)
+	assert.match(f['Refund if deadline is missed'].actual, /transfer to client/)
+})
+
 test('finding keys are stable across versions', () => {
 	const v1 = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
 	const v2 = compare(terms, analysisFor('FreelanceEscrowV2.sol', 'FreelanceEscrowV2', true), onchain(30n))
@@ -127,6 +139,7 @@ test('terms hash ignores key order and whitespace', () => {
 	assert.equal(termsHash(escrowTermsSchema.parse(reordered)), termsHash(terms))
 })
 
+<<<<<<< HEAD
 test('report document: only hashes reach the chain, details are recoverable off-chain', () => {
 	const analysis = analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false)
 	const findings = compare(terms, analysis, onchain(3n))
@@ -139,4 +152,18 @@ test('report document: only hashes reach the chain, details are recoverable off-
 	const doc = JSON.parse(a.canonical)
 	assert.equal(doc.findings.length, findings.length)
 	assert.equal(doc.onchain.deliveryPeriod, String(3n * 86400n))
+=======
+test('evidence report hash is canonical and stable', () => {
+	const findings = compare(terms, analysisFor('FreelanceEscrowV2.sol', 'FreelanceEscrowV2', true), onchain(30n))
+	const first = buildEvidenceReport({
+		agreementId: '1',
+		target: CLIENT,
+		codeHash: findingKey('code'),
+		termsHash: termsHash(terms),
+		findings,
+	})
+	const second = buildEvidenceReport({ ...first.report })
+	assert.equal(first.hash, second.hash)
+	assert.equal(first.canonical, second.canonical)
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 })

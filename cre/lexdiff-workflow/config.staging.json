@@ -3,7 +3,12 @@
   "registryAddress": "0xbd1472dad8e08c2f66e3f5bb3876eb9f0c8085e9",
   "etherscanApiUrl": "https://api.etherscan.io/v2/api",
   "etherscanChainId": "11155111",
+<<<<<<< HEAD
   "evidenceStoreUrl": "http://localhost:3000/api/evidence",
   "gasLimit": "10000000",
   "readFinalized": false
+=======
+  "gasLimit": "5000000",
+  "evidenceStoreUrl": "http://localhost:3000/api/evidence"
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 }

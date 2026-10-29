@@ -28,7 +28,8 @@ export async function POST(request: Request) {
       max_tokens: 16000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      output_config: { effort: 'high', format: betaZodOutputFormat(escrowTermsSchema) },
+      // The SDK currently bundles a different Zod type identity; runtime validation below remains authoritative.
+      output_config: { effort: 'high', format: betaZodOutputFormat(escrowTermsSchema as never) },
       system: SYSTEM,
       messages: [{ role: 'user', content: `<agreement>\n${text}\n</agreement>` }],
     })
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
     if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
       return Response.json({ error: 'Extraction did not complete. Try a shorter document.' }, { status: 502 })
     }
-    return Response.json({ terms: response.parsed_output, model: response.model })
+    return Response.json({ terms: escrowTermsSchema.parse(response.parsed_output), model: response.model })
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
       return Response.json({ error: 'ANTHROPIC_API_KEY is missing or invalid.' }, { status: 500 })

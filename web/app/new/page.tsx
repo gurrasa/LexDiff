@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
+<<<<<<< HEAD
 import { useEffect, useState } from 'react'
 import { decodeEventLog, isAddress, isHex, type Address, type Hex } from 'viem'
 import {
@@ -16,6 +17,11 @@ import {
   writeRegistry,
   ZERO_BYTES32,
 } from '@/lib/registry'
+=======
+import { useState } from 'react'
+import { decodeEventLog, isAddress, keccak256, toBytes, type Address, type Hex } from 'viem'
+import { AGREEMENT_APPROVAL_TYPES, connectWallet, registry, registryAbi, REGISTRY_ADDRESS, writeRegistry } from '@/lib/registry'
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 import { type EscrowTerms, escrowTermsSchema } from '@/lib/terms'
 
 const ZERO = '0x0000000000000000000000000000000000000000' as Address
@@ -24,12 +30,18 @@ export default function NewAgreement() {
   const router = useRouter()
   const [text, setText] = useState('')
   const [termsJson, setTermsJson] = useState('')
+<<<<<<< HEAD
   const [roles, setRoles] = useState({ client: '', freelancer: '', reviewer: '', developer: '', target: '' })
   const [verifier, setVerifier] = useState({ forwarder: SEPOLIA_MOCK_FORWARDER as string, workflowOwner: '', workflowId: '' })
   const [supersedes, setSupersedes] = useState('')
   const [registration, setRegistration] = useState<Registration | null>(null)
   const [sigs, setSigs] = useState<{ client?: Hex; reviewer?: Hex }>({})
   const [demoV1, setDemoV1] = useState<string | null>(null)
+=======
+  const [roles, setRoles] = useState({ client: '', freelancer: '', reviewer: '', developer: '', target: '', verifier: '' })
+  const [published, setPublished] = useState<{ hash: Hex; uri: string; title: string; deadline: bigint } | null>(null)
+  const [approvals, setApprovals] = useState<{ client?: Hex; reviewer?: Hex }>({})
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
@@ -56,6 +68,7 @@ export default function NewAgreement() {
     setSigs({})
   }
 
+<<<<<<< HEAD
   const extractFrom = async (agreement: string) => {
     const res = await fetch('/api/extract', { method: 'POST', body: JSON.stringify({ text: agreement }) })
     const body = await res.json()
@@ -79,6 +92,26 @@ export default function NewAgreement() {
         // No Claude key: fall back to the reviewed example terms.
         setTermsJson(await (await fetch('/demo/freelance-escrow.terms.json')).text())
       }
+=======
+  const updateRole = (key: keyof typeof roles, value: string) => {
+    setRoles((current) => ({ ...current, [key]: value }))
+    setPublished(null)
+    setApprovals({})
+  }
+
+  const extract = () =>
+    run('Extracting with Claude', async () => {
+      const res = await fetch('/api/extract', { method: 'POST', body: JSON.stringify({ text }) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error)
+      const terms = body.terms as EscrowTerms
+      setTermsJson(JSON.stringify(terms, null, 2))
+      setRoles((r) => ({
+        ...r,
+        client: isAddress(terms.parties.client.wallet) ? terms.parties.client.wallet : r.client,
+        freelancer: isAddress(terms.parties.freelancer.wallet) ? terms.parties.freelancer.wallet : r.freelancer,
+      }))
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     })
 
   const publish = () =>
@@ -134,10 +167,76 @@ export default function NewAgreement() {
       setSigs((s) => (same(registration.client, registration.reviewer) ? { client: signature, reviewer: signature } : { ...s, [role]: signature }))
     })
 
+<<<<<<< HEAD
   const register = () =>
     run('Registering on Sepolia', async () => {
       if (!registration || !sigs.client || !sigs.reviewer) return
       const receipt = await writeRegistry('registerAgreement', [registration, sigs.client, sigs.reviewer])
+=======
+  const publish = () =>
+    run('Publishing reviewed terms', async () => {
+      for (const [k, v] of Object.entries(roles)) if (!isAddress(v)) throw new Error(`${k} must be an address`)
+      const terms = escrowTermsSchema.parse({
+        ...JSON.parse(termsJson),
+        parties: {
+          client: { ...JSON.parse(termsJson).parties.client, wallet: roles.client },
+          freelancer: { ...JSON.parse(termsJson).parties.freelancer, wallet: roles.freelancer },
+        },
+      })
+      const res = await fetch('/api/terms', { method: 'POST', body: JSON.stringify(terms) })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error)
+      setPublished({ hash: body.hash, uri: body.uri, title: terms.title, deadline: BigInt(Math.floor(Date.now() / 1000) + 3600) })
+      setApprovals({})
+    })
+
+  const signApproval = (role: 'client' | 'reviewer') =>
+    run(`Signing as ${role}`, async () => {
+      if (!published) throw new Error('Publish the reviewed terms first')
+      const expected = roles[role] as Address
+      const { wallet, account } = await connectWallet()
+      if (account.toLowerCase() !== expected.toLowerCase()) throw new Error(`Connect the ${role} wallet ${expected}`)
+      const nonce = await registry.nonces(account)
+      const signature = await wallet.signTypedData({
+        account,
+        domain: { name: 'LexDiff', version: '1', chainId: 11155111, verifyingContract: REGISTRY_ADDRESS },
+        types: AGREEMENT_APPROVAL_TYPES,
+        primaryType: 'AgreementApproval',
+        message: {
+          client: roles.client as Address,
+          reviewer: roles.reviewer as Address,
+          developer: roles.developer as Address,
+          target: roles.target as Address,
+          verifier: roles.verifier as Address,
+          termsHash: published.hash,
+          termsURIHash: keccak256(toBytes(published.uri)),
+          titleHash: keccak256(toBytes(published.title)),
+          nonce,
+          deadline: published.deadline,
+        },
+      })
+      setApprovals((current) => ({ ...current, [role]: signature }))
+    })
+
+  const register = () =>
+    run('Registering approved agreement', async () => {
+      if (!published || !approvals.client || !approvals.reviewer) throw new Error('Client and reviewer approvals are required')
+
+      setBusy('Waiting for registerAgreement transaction')
+      const receipt = await writeRegistry('registerAgreement', [
+        roles.client as Address,
+        roles.reviewer as Address,
+        roles.developer as Address,
+        roles.target as Address,
+        roles.verifier as Address,
+        published.hash as Hex,
+        published.uri,
+        published.title,
+        published.deadline,
+        approvals.client,
+        approvals.reviewer,
+      ])
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
       for (const log of receipt.logs) {
         try {
           const ev = decodeEventLog({ abi: registryAbi, data: log.data, topics: log.topics })
@@ -184,6 +283,7 @@ export default function NewAgreement() {
       {error && <p className="error">{error}</p>}
       {busy && <p className="notice">{busy}…</p>}
 
+<<<<<<< HEAD
       <section className="panel stack">
         <h2 style={{ margin: 0 }}>1. The agreement</h2>
         <p className="small muted" style={{ margin: 0 }}>The signed legal agreement, in plain text. Claude will pick out the terms the smart contract must follow.</p>
@@ -216,6 +316,62 @@ export default function NewAgreement() {
               <ul style={{ margin: '0.25rem 0 0' }}>
                 {preview.sourceClauses.map((c, i) => <li key={i}>“{c.quote}”</li>)}
               </ul>
+=======
+      <div className="grid two" style={{ marginTop: '1rem' }}>
+        <section className="panel stack">
+          <div className="row spread">
+            <h3 style={{ margin: 0 }}>1 · Agreement text</h3>
+            <button className="ghost small" onClick={loadDemo} disabled={!!busy}>Load demo agreement</button>
+          </div>
+          <textarea rows={22} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste the signed agreement…" />
+          <button onClick={extract} disabled={!!busy || !text.trim()}>Extract terms with Claude</button>
+        </section>
+
+        <section className="panel stack">
+          <h3 style={{ margin: 0 }}>2 · Review extracted terms</h3>
+          {preview ? (
+            <div className="small">
+              <p>
+                <b>{preview.payment.amount} {preview.payment.tokenSymbol}</b> · deliver within{' '}
+                <b>{preview.deadlines.deliveryPeriodDays} days</b> · review <b>{preview.deadlines.reviewPeriodDays} days</b> ·
+                refund on missed deadline <b>{preview.refund.onMissedDeadline ? 'yes' : 'no'}</b> · admin powers granted{' '}
+                <b>{preview.adminPowers.length ? preview.adminPowers.map((p) => p.category).join(', ') : 'none'}</b>
+              </p>
+              <details>
+                <summary>Source quotes ({preview.sourceClauses.length})</summary>
+                <ul>
+                  {preview.sourceClauses.map((c, i) => (
+                    <li key={i}><code>{c.term}</code> — “{c.quote}”</li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          ) : (
+            termsJson && <p className="error small">Terms JSON does not match the schema.</p>
+          )}
+          <textarea rows={14} value={termsJson} onChange={(e) => { setTermsJson(e.target.value); setPublished(null); setApprovals({}) }} placeholder="Extracted terms appear here and can be edited." />
+        </section>
+      </div>
+
+      <section className="panel stack" style={{ marginTop: '1rem' }}>
+        <div className="row spread">
+          <h3 style={{ margin: 0 }}>3 · Parties, roles and contract</h3>
+          <button className="ghost small" onClick={fillMe} disabled={!!busy}>Use my wallet for empty roles (demo)</button>
+        </div>
+        <div className="grid four">
+          {(
+            [
+              ['client', 'Client wallet (accepts risk)'],
+              ['freelancer', 'Freelancer wallet'],
+              ['reviewer', 'Reviewer / legal counsel'],
+              ['developer', 'Developer (fixes)'],
+              ['verifier', 'Chainlink CRE verifier / forwarder'],
+            ] as const
+          ).map(([k, label]) => (
+            <div key={k}>
+              <label>{label}</label>
+              <input className="mono" value={roles[k]} onChange={(e) => updateRole(k, e.target.value)} placeholder="0x…" />
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
             </div>
           </div>
         )}
@@ -245,6 +401,7 @@ export default function NewAgreement() {
           <div><label>Developer: wrote and fixes the contract</label>{field(roles.developer, (v) => setRoles({ ...roles, developer: v }))}</div>
         </div>
         <div>
+<<<<<<< HEAD
           <label>The smart contract that will hold the money</label>
           {field(roles.target, (v) => setRoles({ ...roles, target: v }))}
           {demoV1 && !roles.target && (
@@ -272,6 +429,29 @@ export default function NewAgreement() {
         <h2 style={{ margin: 0 }}>4. Sign and register</h2>
         <p className="small muted" style={{ margin: 0 }}>
           The lawyer and the client both sign. That records who approved Claude&apos;s reading of the agreement. Only fingerprints (hashes) go on the blockchain; the terms themselves stay private.
+=======
+          <label>Deployed contract (Sepolia, verified on Etherscan)</label>
+          <input className="mono" value={roles.target} onChange={(e) => updateRole('target', e.target.value)} placeholder="0x…" />
+        </div>
+        {!published ? (
+          <button onClick={publish} disabled={!!busy || !preview}>Publish reviewed terms</button>
+        ) : (
+          <div className="stack">
+            <p className="small muted">Reviewed terms hash: <code>{published.hash}</code></p>
+            <div className="row">
+              <button onClick={() => signApproval('client')} disabled={!!busy || !!approvals.client}>
+                {approvals.client ? 'Client approved ✓' : 'Client: approve reviewed terms'}
+              </button>
+              <button onClick={() => signApproval('reviewer')} disabled={!!busy || !!approvals.reviewer}>
+                {approvals.reviewer ? 'Reviewer approved ✓' : 'Reviewer: approve reviewed terms'}
+              </button>
+            </div>
+            <button onClick={register} disabled={!!busy || !approvals.client || !approvals.reviewer}>Register approved agreement on-chain</button>
+          </div>
+        )}
+        <p className="small muted">
+          Registering emits <code>CheckRequested</code>, which the CRE workflow&apos;s log trigger picks up.
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
         </p>
         <div className="row">
           <button onClick={publish} disabled={!!busy || !preview}>{registration ? '✓ Terms saved' : 'a. Save the approved terms'}</button>

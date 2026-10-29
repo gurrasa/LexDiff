@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { keccak256, toBytes } from 'viem'
@@ -27,6 +28,31 @@ export async function POST(request: Request) {
   await mkdir(DIR, { recursive: true })
   await writeFile(path.join(DIR, `${hash}.json`), canonical)
 
+=======
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { keccak256, toBytes } from 'viem'
+import { canonicalize } from '@/lib/terms'
+
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR || path.join(process.cwd(), 'data', 'evidence')
+
+export async function POST(request: Request) {
+  const report = await request.json()
+  if (report?.schema !== 'lexdiff/evidence-report@1') {
+    return Response.json({ error: 'unsupported evidence report schema' }, { status: 400 })
+  }
+  const canonical = canonicalize(report)
+  const hash = keccak256(toBytes(canonical))
+  await mkdir(EVIDENCE_DIR, { recursive: true })
+  const file = path.join(EVIDENCE_DIR, `${hash}.json`)
+  try {
+    const existing = await readFile(file, 'utf8')
+    if (existing !== canonical) return Response.json({ error: 'hash collision or immutable evidence conflict' }, { status: 409 })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    await writeFile(file, canonical, { flag: 'wx' })
+  }
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
   const base = process.env.PUBLIC_BASE_URL || new URL(request.url).origin
   return Response.json({ hash, uri: `${base}/api/evidence/${hash}` })
 }

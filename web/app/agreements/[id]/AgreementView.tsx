@@ -2,11 +2,18 @@
 
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
+<<<<<<< HEAD
 import { useCallback, useEffect, useState } from 'react'
 import { type Address, type Hex, isAddress } from 'viem'
 import { KIND_PLAIN, ROLES, type Role, rolesOf, roleNames, STATUS_PLAIN, STEPS, stageOf } from '@/lib/plain'
+=======
+import { Fragment, useCallback, useEffect, useState } from 'react'
+import { type Address, isAddress, keccak256, toBytes, zeroHash } from 'viem'
+import { sepolia } from 'viem/chains'
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 import {
   type Agreement,
+  type AgreementEvent,
   type Check,
   connectWallet,
   DECISION_TYPES,
@@ -28,10 +35,16 @@ import {
   writeRegistry,
   ZERO_BYTES32,
 } from '@/lib/registry'
+<<<<<<< HEAD
 import type { EscrowTerms } from '@/lib/terms'
 
 type Details = { clause: string; expected: string; actual: string }
 type Past = Details & { kind: number; check: number }
+=======
+import { canonicalize } from '@/lib/terms'
+
+type FindingDetail = { key: `0x${string}`; clause: string; expected: string; actual: string }
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 
 type Data = {
   agreement: Agreement
@@ -43,7 +56,13 @@ type Data = {
   past: Record<string, Past[]>
   history: Address[]
   decisions: Record<string, Decision[]>
+<<<<<<< HEAD
   notes: Record<string, string>
+=======
+  pendingTarget: Address
+  details: Record<string, FindingDetail>
+  events: AgreementEvent[]
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
 }
 
 const ZERO = '0x0000000000000000000000000000000000000000'
@@ -69,11 +88,13 @@ export default function AgreementView() {
   const [log, setLog] = useState('')
 
   const load = useCallback(async () => {
-    const [agreement, findings, checks, history] = await Promise.all([
+    const [agreement, findings, checks, history, pendingTarget, events] = await Promise.all([
       registry.getAgreement(id),
       registry.getFindings(id),
       registry.getChecks(id),
       registry.getContractHistory(id),
+      registry.pendingTarget(id),
+      registry.events(id),
     ])
     const [terms, reports] = await Promise.all([
       getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI),
@@ -91,6 +112,7 @@ export default function AgreementView() {
 
     const decisions: Record<string, Decision[]> = {}
     await Promise.all(findings.map(async (f) => (decisions[f.key] = await registry.getDecisions(id, f.key))))
+<<<<<<< HEAD
     const noteText: Record<string, string> = {}
     const hashes = new Set(Object.values(decisions).flat().map((d) => d.noteHash).filter((h) => h !== ZERO_BYTES32))
     await Promise.all(
@@ -100,6 +122,18 @@ export default function AgreementView() {
       }),
     )
     setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText })
+=======
+    const details: Record<string, FindingDetail> = {}
+    for (const check of [...checks].reverse()) {
+      const response = await fetch(`/api/evidence/${check.reportHash}`)
+      if (response.ok) {
+        const report = await response.json() as { findings?: FindingDetail[] }
+        if (keccak256(toBytes(canonicalize(report))) !== check.reportHash) throw new Error('Evidence report hash mismatch')
+        for (const finding of report.findings ?? []) details[finding.key] ??= finding
+      }
+    }
+    setData({ agreement, findings, checks, history, decisions, pendingTarget, details, events })
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
   }, [id])
 
   useEffect(() => {
@@ -132,18 +166,25 @@ export default function AgreementView() {
     })
 
   const decide = (f: Finding, decision: number) =>
+<<<<<<< HEAD
     run('Waiting for your signature', async () => {
       const note = (notes[f.key] ?? '').trim()
       if (decision === DecisionType.Dispute && !note) throw new Error('Write why you disagree before disputing.')
+=======
+    run(`Signing ${DECISION_LABEL[decision]}`, async () => {
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
       const { wallet, account } = await connectWallet()
       const noteHash = note ? (await putEvidence(noteValue(note))).hash : ZERO_BYTES32
       const nonce = await registry.nonces(account)
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600)
+      if (decision === DecisionType.Dispute && !note.trim()) throw new Error('A dispute requires a reason')
+      const noteHash = note ? keccak256(toBytes(note)) : zeroHash
       const signature = await wallet.signTypedData({
         account,
         domain: DOMAIN(),
         types: DECISION_TYPES,
         primaryType: 'Decision',
+<<<<<<< HEAD
         message: { agreementId: id, findingKey: f.key, decision, evidenceHash: f.evidenceHash, noteHash, nonce, deadline },
       })
       setBusy('Recording your signed decision on Sepolia')
@@ -167,11 +208,33 @@ export default function AgreementView() {
       }
       const code = /__EXIT__(\d+)/.exec(all)?.[1]
       if (code !== '0') throw new Error('The Chainlink check failed. See the log below.')
+=======
+        message: {
+          agreementId: id,
+          findingKey: f.key,
+          decision,
+          evidenceHash: f.evidenceHash,
+          noteHash,
+          nonce,
+          deadline,
+        },
+      })
+      setBusy('Recording signed decision on-chain')
+      if (note) {
+        const stored = await fetch('/api/notes', { method: 'POST', body: JSON.stringify({ note }) })
+        const noteRecord = await stored.json()
+        if (!stored.ok || noteRecord.hash !== noteHash) throw new Error(noteRecord.error || 'Note hash mismatch')
+      }
+      await writeRegistry('submitDecision', [id, f.key, decision, f.evidenceHash, noteHash, deadline, account, signature])
+      setNote('')
+      setExpanded(null)
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
     })
 
   if (error && !data) return <p className="error">{error}</p>
   if (!data) return <p className="muted">Loading agreement #{idParam} from Sepolia…</p>
 
+<<<<<<< HEAD
   const { agreement: a, terms, findings, checks, details, past, history, decisions, notes: noteText } = data
   const myRoles = rolesOf(a, account)
   const role = actingAs && myRoles.includes(actingAs) ? actingAs : (myRoles[0] ?? null)
@@ -180,6 +243,15 @@ export default function AgreementView() {
   const matches = findings.filter((f) => f.kind === 0 && f.status !== 4)
   const pending = a.pendingTarget !== ZERO
   const isMock = same(a.verifier.forwarder, '0x15fC6ae953E024d975e77382eEeC56A9101f9F88')
+=======
+  const { agreement: a, findings, checks, history, decisions, pendingTarget, details, events } = data
+  const isClient = same(account ?? '', a.client)
+  const isReviewer = same(account ?? '', a.reviewer)
+  const isDeveloper = same(account ?? '', a.developer)
+  const roles = [isClient && 'client', isReviewer && 'reviewer', isDeveloper && 'developer'].filter(Boolean)
+  const count = (s: number) => findings.filter((f) => f.status === s).length
+  const sorted = [...findings].sort((x, y) => (x.kind === 0 ? 1 : 0) - (y.kind === 0 ? 1 : 0) || x.firstCheck - y.firstCheck)
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
   const simulateCmd = `cd cre && cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \\\n  --non-interactive --trigger-index 0 --http-payload '{"agreementId":${idParam}}'`
   const clauseOf = (f: Finding) => (f.detailsHash === ZERO_BYTES32 ? past[f.key]?.at(-1)?.clause : details[f.detailsHash]?.clause) ?? 'Unknown term'
 
@@ -245,6 +317,29 @@ export default function AgreementView() {
     return null
   }
 
+  const downloadRecord = () => {
+    const record = {
+      schema: 'lexdiff/case-record@1',
+      exportedAt: new Date().toISOString(),
+      chainId: sepolia.id,
+      registry: REGISTRY_ADDRESS,
+      agreementId: id,
+      agreement: a,
+      contractHistory: history,
+      checks,
+      findings,
+      decisions,
+      events: events.map((event) => ({ ...event, explorerUrl: `${EXPLORER}/tx/${event.transactionHash}` })),
+    }
+    const json = JSON.stringify(record, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
+    const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `lexdiff-agreement-${idParam}-record.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <>
       {/* ---- Header ---- */}
@@ -259,7 +354,12 @@ export default function AgreementView() {
             </p>
           )}
         </div>
+<<<<<<< HEAD
         <div className="stack" style={{ textAlign: 'right' }}>
+=======
+        <div className="row">
+          <button className="ghost" onClick={downloadRecord}>Export case record</button>
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
           {account ? (
             myRoles.length > 1 ? (
               <div>
@@ -286,6 +386,7 @@ export default function AgreementView() {
       {a.supersedes > BigInt(0) && <p className="notice">Amends <Link href={`/agreements/${a.supersedes}`}>agreement #{a.supersedes.toString()}</Link>.</p>}
       {!terms && <p className="error">The terms are unavailable or do not match the registered fingerprint.</p>}
 
+<<<<<<< HEAD
       {/* ---- Journey ---- */}
       <ol className="stepper">
         {STEPS.map((s, i) => (
@@ -313,6 +414,115 @@ export default function AgreementView() {
           <summary>Chainlink CRE log</summary>
           <pre className="log">{log}</pre>
         </details>
+=======
+      <h2>Findings</h2>
+      {findings.length === 0 ? (
+        <div className="panel">
+          <p>No CRE check recorded yet. Run the workflow:</p>
+          <pre>{simulateCmd}</pre>
+        </div>
+      ) : (
+        <div className="panel table-wrap" style={{ padding: 0 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Finding</th>
+                <th>Agreement says</th>
+                <th>Code does</th>
+                <th>Status</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((f) => {
+                const kind = KIND[f.kind]
+                const ds = decisions[f.key] ?? []
+                const detail = details[f.key]
+                const canAccept = isClient && f.kind !== 0 && (f.status === 1 || f.status === 3)
+                const canAssign = isReviewer && f.kind !== 0 && (f.status === 1 || f.status === 2)
+                const canRecord = (isClient || isReviewer || isDeveloper) && f.kind !== 0 && f.status !== 4
+                const open = expanded === f.key
+                return (
+                  <Fragment key={f.key}>
+                    <tr>
+                      <td>
+                        <span className={`badge tone-${kind.tone}`}>{kind.icon} {kind.label}</span>
+                        <div style={{ marginTop: 4 }}><b>{detail?.clause ?? `Finding ${f.key.slice(0, 10)}…`}</b></div>
+                      </td>
+                      <td className="small">{detail?.expected ?? 'See evidence report'}</td>
+                      <td className="small">{detail?.actual ?? 'See evidence report'}</td>
+                      <td>
+                        <span className={`badge tone-${STATUS_TONE[f.status]}`}>{STATUS[f.status]}</span>
+                        {f.status === 3 && <div className="small muted">assigned to {shortAddr(f.assignee)}</div>}
+                        {f.status === 4 && <div className="small muted">verified in check #{f.resolvedInCheck}</div>}
+                      </td>
+                      <td>
+                        <button className="ghost small" onClick={() => setExpanded(open ? null : f.key)}>
+                          {open ? 'Close' : ds.length ? `Trail (${ds.length})` : 'Details'}
+                        </button>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr>
+                        <td colSpan={5} style={{ background: 'var(--bg)' }}>
+                          <div className="grid two">
+                            <div className="small stack">
+                              <div>Evidence hash <code>{f.evidenceHash}</code></div>
+                              <div>First seen in check #{f.firstCheck}, last checked in #{f.lastCheck}{f.openedAt ? `, opened ${fmtTime(f.openedAt)}` : ''}</div>
+                              <h3>Decision trail</h3>
+                              {ds.length === 0 && <p className="muted">No signed decisions.</p>}
+                              <ul className="timeline">
+                                {ds.map((d, i) => (
+                                  <li key={i}>
+                                    <b>{DECISION_LABEL[d.decision]}</b> by{' '}
+                                    <span className="mono">{shortAddr(d.signer)}</span>{' '}
+                                    ({same(d.signer, a.client) ? 'client' : same(d.signer, a.reviewer) ? 'reviewer' : 'signer'}) ·{' '}
+                                    {fmtTime(d.timestamp)}
+                                    {d.noteHash !== zeroHash && <div><a href={`/api/notes/${d.noteHash}`} target="_blank">View signed note</a></div>}
+                                    <div className="muted">EIP-712 sig <code>{d.signature.slice(0, 18)}…</code> over evidence <code>{d.evidenceHash.slice(0, 10)}…</code></div>
+                                  </li>
+                                ))}
+                                {f.status === 4 && <li><b>Resolved</b> — CRE confirmed in check #{f.resolvedInCheck} · {fmtTime(f.resolvedAt)}</li>}
+                              </ul>
+                            </div>
+                            <div className="stack">
+                              {canRecord ? (
+                                <>
+                                  <label>Note (signed together with the decision)</label>
+                                  <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason, clause reference…" />
+                                  <div className="row">
+                                    <button className="ghost" onClick={() => decide(f, DecisionType.Acknowledge)} disabled={!!busy}>Acknowledge</button>
+                                    {canAccept && (
+                                      <button onClick={() => decide(f, DecisionType.AcceptRisk)} disabled={!!busy}>Sign: Accepted risk</button>
+                                    )}
+                                    {canAssign && (
+                                      <button onClick={() => decide(f, DecisionType.RequireRemediation)} disabled={!!busy}>Sign: Remediation required</button>
+                                    )}
+                                    <button className="ghost" onClick={() => decide(f, DecisionType.Dispute)} disabled={!!busy}>Dispute</button>
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="small muted">
+                                  {f.kind === 0
+                                    ? 'Code and agreement agree. Nothing to decide.'
+                                    : f.status === 4
+                                      ? 'Resolved. Only a new CRE check can reopen it.'
+                                      : 'The client can accept this risk; the reviewer can require remediation. Connect the matching wallet.'}
+                                </p>
+                              )}
+                              <p className="small muted">Nobody can mark a finding Resolved. Only a CRE check that no longer finds the mismatch can.</p>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
       )}
 
       {/* ---- Issues ---- */}
@@ -344,6 +554,7 @@ export default function AgreementView() {
                   <span className={`badge tone-${STATUS_TONE[f.status]}`}>{STATUS_PLAIN[f.status]}</span>
                   {disputed && <span className="badge tone-warn">⚖️ Disputed</span>}
                 </div>
+<<<<<<< HEAD
               </div>
               <div className="small muted">{f.status === 4 ? 'Was: ' + KIND_PLAIN[before?.kind ?? f.kind].toLowerCase() : KIND_PLAIN[f.kind]}</div>
 
@@ -417,6 +628,11 @@ export default function AgreementView() {
                 <div>{e.text}</div>
                 {e.note && <div className="small">“{e.note}”</div>}
                 <div className="small muted">{fmtTime(e.t)}</div>
+=======
+                <div className="small muted">source hash <code>{c.codeHash.slice(0, 18)}…</code></div>
+                <div className="small muted">evidence report <code>{c.reportHash}</code></div>
+                <div className="small"><a href={`/api/evidence/${c.reportHash}`} download>Download canonical JSON evidence</a></div>
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
               </li>
             ))}
           </ul>
@@ -426,6 +642,13 @@ export default function AgreementView() {
         <section>
           <h2>The contracts</h2>
           <div className="panel small stack">
+<<<<<<< HEAD
+=======
+            <div>Client <code>{a.client}</code></div>
+            <div>Reviewer <code>{a.reviewer}</code></div>
+            <div>Developer <code>{a.developer}</code></div>
+            <div>Immutable CRE verifier <code>{a.verifier}</code></div>
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
             <div>
               <b>Escrow contract</b>: holds the money and is what Chainlink checks.
               <ol style={{ margin: '0.25rem 0 0' }}>
@@ -438,6 +661,7 @@ export default function AgreementView() {
               </ol>
               {pending && <div>Proposed replacement <code>{shortAddr(a.pendingTarget)}</code> <span className="badge tone-warn">waiting for the client</span></div>}
             </div>
+<<<<<<< HEAD
             <div>
               <b>LexDiff record</b>: stores fingerprints (hashes) of the terms, findings and signatures. It never touches the money.
             </div>
@@ -461,6 +685,49 @@ export default function AgreementView() {
             <button className="ghost small" style={{ marginTop: '0.75rem' }} disabled={!!busy} onClick={() => run('Requesting a new check', async () => void (await writeRegistry('requestCheck', [id])))}>
               Ask Chainlink to check again
             </button>
+=======
+          </div>
+
+          <h2>On-chain event trail</h2>
+          <ul className="timeline">
+            {events.map((event, index) => (
+              <li key={`${event.transactionHash}-${index}`}>
+                <b>{event.eventName}</b> · block {event.blockNumber.toString()}{' '}
+                <a href={`${EXPLORER}/tx/${event.transactionHash}`} target="_blank" rel="noreferrer">view transaction</a>
+              </li>
+            ))}
+          </ul>
+
+          {(isClient || isDeveloper) && (
+            <div className="panel stack" style={{ marginTop: '1rem' }}>
+              <h3 style={{ margin: 0 }}>Redeploy &amp; re-check</h3>
+              <label>New contract address</label>
+              <input className="mono" value={newTarget} onChange={(e) => setNewTarget(e.target.value)} placeholder="0x…" />
+              {pendingTarget !== '0x0000000000000000000000000000000000000000' && (
+                <p className="notice small">Pending developer proposal: <code>{pendingTarget}</code></p>
+              )}
+              <div className="row">
+                {isDeveloper && (
+                <button
+                  disabled={!!busy || !isAddress(newTarget)}
+                  onClick={() => run('Proposing contract', async () => void (await writeRegistry('proposeContract', [id, newTarget])))}
+                >
+                  Developer: propose contract
+                </button>
+                )}
+                {isClient && pendingTarget !== '0x0000000000000000000000000000000000000000' && (
+                  <button onClick={() => run('Accepting contract', async () => void (await writeRegistry('acceptContract', [id])))} disabled={!!busy}>
+                    Client: accept proposal
+                  </button>
+                )}
+                <button className="ghost" disabled={!!busy} onClick={() => run('Requesting check', async () => void (await writeRegistry('requestCheck', [id])))}>
+                  Request CRE check
+                </button>
+              </div>
+              <p className="small muted">Only client acceptance changes the active contract and emits <code>CheckRequested</code>.</p>
+              <pre>{simulateCmd}</pre>
+            </div>
+>>>>>>> df31607 (Align LexDiff with evidence-first design)
           )}
         </section>
       </div>
