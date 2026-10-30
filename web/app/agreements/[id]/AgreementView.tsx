@@ -499,8 +499,10 @@ export default function AgreementView() {
     decide: findings.filter(needsDecision).length,
   }
   const ORDER: Record<Shown, number> = { fail: 0, inconclusive: 1, 'not-checked': 2, pass: 3 }
+  // A filter that no longer matches anything (e.g. every decision is made) falls back to showing everything.
+  const active: Filter = filter !== 'all' && (filter === 'decide' ? counts.decide : counts[filter]) === 0 ? 'all' : filter
   const visible = findings
-    .filter((f) => filter === 'all' || (filter === 'decide' ? needsDecision(f) : shownOf(f) === filter))
+    .filter((f) => active === 'all' || (active === 'decide' ? needsDecision(f) : shownOf(f) === active))
     .sort((x, y) => ORDER[shownOf(x)] - ORDER[shownOf(y)])
   const FILTERS: { id: Filter; label: string; n: number }[] = [
     { id: 'all', label: 'All', n: findings.length },
@@ -965,8 +967,8 @@ export default function AgreementView() {
               )}
 
               <div role="group" aria-label="Filter findings" className="filters">
-                {FILTERS.filter((x) => x.id === 'all' || x.n > 0 || x.id === filter).map((x) => (
-                  <button key={x.id} aria-pressed={filter === x.id} onClick={() => setFilter(x.id)}>
+                {FILTERS.filter((x) => x.id === 'all' || x.n > 0).map((x) => (
+                  <button key={x.id} aria-pressed={active === x.id} onClick={() => setFilter(x.id)}>
                     {x.label} · {x.n}
                   </button>
                 ))}
