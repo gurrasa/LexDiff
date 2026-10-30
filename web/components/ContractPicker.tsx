@@ -46,12 +46,12 @@ export default function ContractPicker({ value, onChange }: { value: string; onC
             <button
               key={d.key}
               type="button"
-              className={selected ? '' : 'ghost'}
-              style={{ justifyContent: 'flex-start', textAlign: 'left', flexDirection: 'column', alignItems: 'flex-start' }}
+              className="ghost option"
+              aria-pressed={selected}
               onClick={() => onChange(address)}
             >
-              <span>{selected ? '● ' : ''}{d.label}</span>
-              <span className="small" style={{ fontWeight: 400, opacity: 0.85 }}>{d.hint} · {shortAddr(address)}</span>
+              <span>{d.label}</span>
+              <span className="small muted" style={{ fontWeight: 400 }}>{d.hint} · <span className="mono">{shortAddr(address)}</span></span>
             </button>
           )
         })}

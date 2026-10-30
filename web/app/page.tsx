@@ -4,11 +4,13 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { type Address, type Hex, zeroAddress } from 'viem'
 import { ROLES, type Role, rolesOf, STEPS, stageOf } from '@/lib/plain'
+import { Badge, EmptyState, Loading, Result, StatCard } from '@/components/ui'
 import {
   type Agreement,
   type Check,
   connectWallet,
   type Finding,
+  Verification,
   getEvidence,
   REGISTRY_ADDRESS,
   registry,
@@ -20,6 +22,18 @@ import type { EscrowTerms } from '@/lib/terms'
 
 type Row = { id: bigint; agreement: Agreement; terms: EscrowTerms | null; findings: Finding[]; checks: Check[] }
 type Pending = { id: Hex; title: string; role: 'client' | 'reviewer'; other: string }
+
+const fmtDate = (ts: bigint) =>
+  new Date(Number(ts) * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+/** Fail and Inconclusive straight from the registry. Passes are not counted here: telling a structural Pass
+ * (shown as Inconclusive) from an executed one needs the report, which only the agreement page loads. */
+const issuesOf = (r: Row) => ({
+  fail: r.findings.filter((f) => f.verification === Verification.Fail).length,
+  inconclusive: r.findings.filter((f) => f.verification === Verification.Inconclusive).length,
+})
+
+const roleLabel = (r: Role) => (r === 'reviewer' ? 'lawyer' : ROLES[r].label.toLowerCase())
 
 /** Whether the next step of this agreement is for one of `roles`. The client can also act while decisions are open. */
 const myTurn = (row: Row, roles: Role[]) => {
@@ -82,32 +96,77 @@ export default function Home() {
   const yourTurn = mine.filter((r) => myTurn(r, rolesOf(r.agreement, account)))
   const waiting = mine.filter((r) => !myTurn(r, rolesOf(r.agreement, account)))
 
-  const card = (row: Row, highlight: boolean) => {
+  // The summary covers your agreements once a wallet is connected, otherwise the whole registry.
+  const scope = account ? mine : (rows ?? [])
+  const issues = scope.map(issuesOf).reduce((a, b) => ({ fail: a.fail + b.fail, inconclusive: a.inconclusive + b.inconclusive }), { fail: 0, inconclusive: 0 })
+  const decided = scope.filter((r) => stageOf(r.agreement, r.findings, r.checks).waitingFor === null).length
+  const titleOf = (r: Row) => r.terms?.title ?? `Agreement #${r.id}`
+  const activity = scope
+    .flatMap((r) => [
+      { t: r.agreement.createdAt, what: 'Agreement registered', where: titleOf(r) },
+      ...r.checks.map((c, i) => {
+        const found = [c.failed && `${c.failed} fail`, c.inconclusive && `${c.inconclusive} inconclusive`].filter(Boolean).join(', ')
+        return { t: c.timestamp, what: `Chainlink check #${i + 1}${found ? `: ${found}` : ': no failures'}`, where: titleOf(r) }
+      }),
+    ])
+    .sort((x, y) => Number(y.t - x.t))
+    .slice(0, 6)
+
+  const contractOf = (r: Row) =>
+    same(r.agreement.target, zeroAddress) ? 'no contract yet' : <span className="mono">contract {shortAddr(r.agreement.target)}</span>
+
+  const attentionCard = (row: Row) => {
     const roles = rolesOf(row.agreement, account)
     const stage = stageOf(row.agreement, row.findings, row.checks)
+    const { fail, inconclusive } = issuesOf(row)
+    const last = row.checks.at(-1)
     return (
-      <Link
-        key={row.id.toString()}
-        href={`/agreements/${row.id}`}
-        className="panel row spread"
-        style={{ color: 'inherit', borderColor: highlight ? 'var(--accent)' : undefined, borderWidth: highlight ? 2 : 1 }}
-      >
-        <div>
-          <h3 style={{ margin: 0 }}>{row.terms?.title ?? `Agreement #${row.id}`}</h3>
-          <span className="small muted">
-            #{row.id.toString()} · {same(row.agreement.target, zeroAddress) ? 'no contract yet' : `contract ${shortAddr(row.agreement.target)}`}
-            {roles.length > 0 && <> · you are the {roles.map((r) => ROLES[r].label.toLowerCase()).join(' & ')}</>}
-          </span>
+      <article key={row.id.toString()} className="agreement-card attention">
+        <div className="row spread" style={{ alignItems: 'flex-start' }}>
+          <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+            <h3>{titleOf(row)}</h3>
+            <div className="meta">
+              #{row.id.toString()} · {contractOf(row)} · you are the {roles.map(roleLabel).join(' & ')}
+            </div>
+          </div>
+          <Badge tone="info">Your turn · {STEPS[stage.step]}</Badge>
         </div>
-        <div style={{ textAlign: 'right', maxWidth: 360 }}>
-          <span className={`badge ${stage.waitingFor === null ? 'tone-ok' : highlight ? 'tone-info' : 'tone-muted'}`}>
-            {highlight ? 'Your turn' : STEPS[stage.step]}
-          </span>
+        <p style={{ margin: 0 }}>{stage.title}.</p>
+        <div className="foot">
+          {last ? (
+            <div className="result-line">
+              <Result result="fail" size={14}>{fail} fail</Result>
+              <Result result="inconclusive" size={14}>{inconclusive} inconclusive</Result>
+              <span className="muted">Last checked {fmtDate(last.timestamp)}</span>
+            </div>
+          ) : (
+            <span className="small muted">{same(row.agreement.target, zeroAddress) ? 'No contract yet' : 'Contract approved'} · not checked</span>
+          )}
+          <Link href={`/agreements/${row.id}`} className="button">View agreement</Link>
+        </div>
+      </article>
+    )
+  }
+
+  const rowCard = (row: Row) => {
+    const stage = stageOf(row.agreement, row.findings, row.checks)
+    const last = row.checks.at(-1)
+    const w = stage.waitingFor
+    return (
+      <Link key={row.id.toString()} href={`/agreements/${row.id}`} className="agreement-row">
+        <div>
+          <h3>{titleOf(row)}</h3>
           <div className="small muted">
-            {stage.title}
-            {!highlight && stage.waitingFor && ` · waiting for ${stage.waitingFor === 'chainlink' ? 'Chainlink' : `the ${ROLES[stage.waitingFor].label.toLowerCase()}`}`}
+            #{row.id.toString()} · {contractOf(row)}
+            {last && <> · checked {fmtDate(last.timestamp)}</>}
           </div>
         </div>
+        {w === null ? (
+          <Badge tone="ok">Decided</Badge>
+        ) : (
+          <Badge tone="muted">Waiting for {w === 'chainlink' ? 'Chainlink' : `the ${roleLabel(w)}`}</Badge>
+        )}
+        <span style={{ color: 'var(--accent)', fontWeight: 500 }}>View</span>
       </Link>
     )
   }
@@ -118,102 +177,152 @@ export default function Home() {
 
   return (
     <>
-      {!account ? (
-        <section className="hero">
-          <h1>Does the smart contract do what the parties signed?</h1>
-          <p className="lede">
-            LexDiff checks a smart contract against the agreement it is meant to enforce, and keeps a signed record of who knew about
-            each problem, who accepted it, and whether a fix was verified.
+      <section className="page-head">
+        <div>
+          <h1>{account ? 'Your agreements' : 'Does the smart contract do what the parties signed?'}</h1>
+          <p className="lede" style={{ margin: 0 }}>
+            Check that each smart contract does what the parties signed, and keep a signed record of every decision.
           </p>
-          <div className="row" style={{ marginTop: '1rem' }}>
-            <button onClick={() => connectWallet().then((w) => setAccount(w.account)).catch((e) => setError(e.message))}>
-              Connect your wallet to see your agreements
+        </div>
+        <div className="row">
+          {!account && (
+            <button className="ghost" onClick={() => connectWallet().then((w) => setAccount(w.account)).catch((e) => setError(e.message))}>
+              Connect wallet
             </button>
-            <a href="#how" className="button ghost">How it works</a>
-          </div>
-        </section>
-      ) : (
-        <section style={{ margin: '1.5rem 0 1rem' }}>
-          <h1 style={{ marginBottom: 4 }}>Your agreements</h1>
-          <p className="muted" style={{ margin: 0 }}>
-            Signed in as <span className="mono">{shortAddr(account)}</span>. Switch account in MetaMask to see another person&apos;s view.
-          </p>
-        </section>
-      )}
+          )}
+          <Link href="/new" className="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+            Create agreement
+          </Link>
+        </div>
+      </section>
       {error && <p className="error">{error}</p>}
 
-      {account && (
-        <>
-          {pending.length > 0 && (
+      <section aria-label="Summary" className="stats">
+        <StatCard label="Total agreements" value={rows ? rows.length : '…'} sub="on this registry" />
+        <StatCard
+          label="Waiting for you"
+          value={account ? yourTurn.length + pending.length : '—'}
+          highlight={!!account && yourTurn.length + pending.length > 0}
+          sub={account ? `${yourTurn.length} to act on · ${pending.length} to sign` : 'connect a wallet'}
+        />
+        <StatCard
+          label="Verification issues"
+          icon="fail"
+          color="var(--bad)"
+          value={rows ? issues.fail + issues.inconclusive : '…'}
+          sub={`${issues.fail} fail · ${issues.inconclusive} inconclusive`}
+        />
+        <StatCard label="Active agreements" value={rows ? scope.length - decided : '…'} sub={`${decided} decided`} />
+      </section>
+
+      <div className="columns">
+        <div className="primary">
+          {rows === null && <Loading />}
+
+          {rows && account && (
             <>
-              <h2>Waiting for your signature</h2>
-              <div className="stack">
+              <section aria-labelledby="attention" className="stack">
+                <h2 id="attention" className="section-title">Needs your attention</h2>
                 {pending.map((p) => (
-                  <Link key={p.id} href={`/sign/${p.id}`} className="panel row spread" style={{ color: 'inherit', borderColor: 'var(--accent)', borderWidth: 2 }}>
-                    <div>
-                      <h3 style={{ margin: 0 }}>{p.title}</h3>
-                      <span className="small muted">You sign as the {p.role === 'reviewer' ? 'lawyer' : 'client'} · {p.role === 'reviewer' ? 'client' : 'lawyer'} {shortAddr(p.other)}</span>
+                  <article key={p.id} className="agreement-card">
+                    <div className="row spread" style={{ alignItems: 'flex-start' }}>
+                      <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+                        <h3>{p.title}</h3>
+                        <div className="meta">
+                          Signing request · {p.role === 'reviewer' ? 'with the client' : 'from the lawyer'} <span className="mono">{shortAddr(p.other)}</span>
+                        </div>
+                      </div>
+                      <Badge tone="info">Waiting for your signature</Badge>
                     </div>
-                    <span className="button small">Review and sign</span>
-                  </Link>
+                    <p style={{ margin: 0 }}>
+                      Review the agreement and the terms Claude extracted, then sign as the {p.role === 'reviewer' ? 'lawyer' : 'client'}.
+                      Nothing is on-chain until both of you sign.
+                    </p>
+                    <div className="foot">
+                      <span className="small muted">No contract yet · not checked</span>
+                      <Link href={`/sign/${p.id}`} className="button ghost">Review and sign</Link>
+                    </div>
+                  </article>
                 ))}
-              </div>
+                {yourTurn.map(attentionCard)}
+                {yourTurn.length === 0 && pending.length === 0 && (
+                  mine.length === 0 ? (
+                    <EmptyState title="No agreements yet" action={{ href: '/new', label: 'Create agreement' }}>
+                      A lawyer starts one and sends the client a signing link. The developer sees it here once it is registered with
+                      their wallet.
+                    </EmptyState>
+                  ) : (
+                    <EmptyState title="Nothing needs you right now">Your agreements are waiting for someone else, or are decided.</EmptyState>
+                  )
+                )}
+              </section>
+
+              {waiting.length > 0 && (
+                <section aria-labelledby="waiting" className="stack">
+                  <h2 id="waiting" className="section-title">Waiting for others</h2>
+                  {waiting.map(rowCard)}
+                </section>
+              )}
             </>
           )}
 
-          <h2>Your turn</h2>
-          {rows === null && <p className="muted">Loading from Sepolia…</p>}
-          {rows && yourTurn.length === 0 && pending.length === 0 && <p className="muted">Nothing needs you right now.</p>}
-          <div className="stack">{yourTurn.map((r) => card(r, true))}</div>
-
-          {waiting.length > 0 && (
-            <>
-              <h2>Waiting for others</h2>
-              <div className="stack">{waiting.map((r) => card(r, false))}</div>
-            </>
+          {rows && !account && (
+            <section className="stack">
+              <h2 className="section-title">Agreements on this registry</h2>
+              {rows.length === 0 ? (
+                <EmptyState title="No agreements yet" action={{ href: '/new', label: 'Create agreement' }}>
+                  A lawyer starts one and sends the client a signing link.
+                </EmptyState>
+              ) : (
+                rows.map(rowCard)
+              )}
+            </section>
           )}
 
-          {rows && mine.length === 0 && pending.length === 0 && (
-            <div className="panel" style={{ marginTop: '1rem' }}>
-              <p style={{ margin: 0 }}>
-                You are not part of any agreement yet. A <b>lawyer</b> starts one with <Link href="/new">New agreement</Link> and sends
-                the client a signing link. The developer and the freelancer see the agreement here once it is registered with their wallet.
-              </p>
-            </div>
+          {account && others.length > 0 && (
+            <details>
+              <summary>Other agreements on this registry ({others.length})</summary>
+              <div className="stack" style={{ marginTop: 12 }}>{others.map(rowCard)}</div>
+            </details>
           )}
-        </>
-      )}
+        </div>
 
-      {others.length > 0 && (
-        <details style={{ marginTop: '2rem' }}>
-          <summary>Other agreements on this registry ({others.length})</summary>
-          <div className="stack" style={{ marginTop: '0.75rem' }}>{others.map((r) => card(r, false))}</div>
-        </details>
-      )}
+        <aside>
+          <section aria-labelledby="recent" className="panel">
+            <h2 id="recent">Recent activity</h2>
+            {rows === null ? (
+              <p className="small muted" style={{ margin: 0 }}>Loading from Sepolia…</p>
+            ) : activity.length === 0 ? (
+              <p className="small muted" style={{ margin: 0 }}>Nothing yet.</p>
+            ) : (
+              <ol className="activity">
+                {activity.map((e, i) => (
+                  <li key={i}>
+                    <div className="what">{e.what}</div>
+                    <div className="when">{e.where} · {fmtDate(e.t)}</div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
 
-      <h2 id="how">How it works</h2>
-      <ol className="steps">
-        <li><b>Agreement signed.</b> The lawyer pastes the agreement; Claude extracts the terms with a quote for each. The lawyer and the client both sign the full agreement and the terms.</li>
-        <li><b>Contract.</b> The developer builds the escrow contract and proposes it; the client approves it as the contract to fund. No money moves yet.</li>
-        <li><b>Code checked.</b> Chainlink, which no party controls, reads the smart contract on Sepolia and checks every term: Pass or Fail.</li>
-        <li><b>Decisions.</b> For each failing property the lawyer can require a fix, or the client can knowingly accept the risk. Anyone involved can confirm they saw it, or dispute it.</li>
-        <li><b>Fix.</b> The developer deploys a corrected contract and proposes it; the client approves it.</li>
-        <li><b>Re-check.</b> Chainlink checks again. A fix is verified only when the same property now passes.</li>
-        <li><b>Decided.</b> Every failing property is verified as fixed or has a signed decision. An accepted risk still shows Fail. Now the client can fund the approved contract.</li>
-      </ol>
-
-      <h2>Who is involved</h2>
-      <div className="grid four">
-        <div className="panel"><h3>Lawyer</h3><p className="small">Starts the agreement, approves Claude&apos;s reading of it, and decides which failures must be fixed.</p></div>
-        <div className="panel"><h3>Client</h3><p className="small">Signs the agreement, can knowingly accept a risk, and approves which contract to fund.</p></div>
-        <div className="panel"><h3>Developer</h3><p className="small">Wrote the contract. Fixes failing properties and proposes the corrected version.</p></div>
-        <div className="panel"><h3>Chainlink</h3><p className="small">Independent checker. The only one that can verify a fix.</p></div>
+          <section id="how" aria-labelledby="how-title" className="panel subtle">
+            <h2 id="how-title" style={{ fontFamily: 'inherit', fontSize: 14 }}>How LexDiff works</h2>
+            <ol style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--ink-soft)' }}>
+              <li>The lawyer and the client sign the agreement and its terms.</li>
+              <li>The developer proposes the contract; the client approves it.</li>
+              <li>Chainlink checks the deployed contract against every term.</li>
+              <li>Each failing property is fixed or knowingly accepted, with a signature.</li>
+              <li>A fix counts only when Chainlink sees the property pass.</li>
+            </ol>
+            <p className="small muted" style={{ margin: '10px 0 0' }}>
+              LexDiff keeps evidence; it does not decide who is liable. A wallet signature proves control of a key, not someone&apos;s
+              legal identity. Only fingerprints (hashes) are stored on-chain.
+            </p>
+          </section>
+        </aside>
       </div>
-
-      <p className="small muted" style={{ marginTop: '2rem' }}>
-        LexDiff keeps evidence; it does not decide who is liable. A wallet signature proves control of a key, not someone&apos;s legal identity.
-        Only fingerprints (hashes) are stored on the blockchain; the agreement, terms and notes stay off-chain.
-      </p>
     </>
   )
 }

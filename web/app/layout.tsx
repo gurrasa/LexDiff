@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Newsreader } from 'next/font/google'
 import Link from 'next/link'
+import { Logo } from '@/components/ui'
 import WalletButton from '@/components/WalletButton'
 import './globals.css'
 
@@ -18,15 +19,20 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
       <body>
         <header className="topbar">
-          <Link href="/" className="brand">
-            Lex<span>Diff</span>
-          </Link>
-          <nav>
-            <Link href="/">My agreements</Link>
-            <Link href="/verify">Verify a record</Link>
-            <Link href="/new" className="button small">New agreement</Link>
-            <WalletButton />
-          </nav>
+          <div className="topbar-inner">
+            <Link href="/" className="brand">
+              <Logo />
+              <span style={{ color: 'inherit' }}>
+                Lex<span>Diff</span>
+              </span>
+            </Link>
+            <nav aria-label="Main">
+              <Link href="/">My agreements</Link>
+              <Link href="/verify">Verify a record</Link>
+              <Link href="/new" className="button">New agreement</Link>
+              <WalletButton />
+            </nav>
+          </div>
         </header>
         <main>{children}</main>
         <footer className="footer">

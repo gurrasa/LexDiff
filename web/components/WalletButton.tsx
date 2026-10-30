@@ -50,9 +50,9 @@ export default function WalletButton() {
   }
 
   return account ? (
-    <span className="badge tone-info mono" title={account}>● {shortAddr(account)}</span>
+    <span className="wallet-pill" title={account}>{shortAddr(account)}</span>
   ) : (
-    <button className="small ghost" onClick={() => connectWallet().then((w) => setAccount(w.account)).catch(() => {})}>
+    <button className="ghost" onClick={() => connectWallet().then((w) => setAccount(w.account)).catch(() => {})}>
       Connect wallet
     </button>
   )

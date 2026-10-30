@@ -23,6 +23,7 @@ import {
   watchAccount,
 } from '@/lib/registry'
 import { PERSONA_LABEL, personas, setPersona } from '@/lib/identity'
+import { Badge, Loading } from '@/components/ui'
 import type { EscrowTerms } from '@/lib/terms'
 
 type Role = 'client' | 'reviewer'
@@ -79,7 +80,7 @@ export default function SignView() {
   }
 
   if (error && !pending) return <p className="error">{error}</p>
-  if (!pending) return <p className="muted">Loading the registration…</p>
+  if (!pending) return <Loading label="Loading the signing request…" />
 
   const r = pending.registration
   const sigs = pending.signatures
@@ -118,15 +119,15 @@ export default function SignView() {
       <td><b>{label}</b></td>
       <td className="mono small">
         {shortAddr(address)}
-        {account && same(account, address) && <span className="badge tone-info" style={{ marginLeft: 6 }}>you</span>}
+        {account && same(account, address) && <span style={{ marginLeft: 6 }}><Badge tone="info">you</Badge></span>}
       </td>
       <td>
         {role === null ? (
           <span className="muted small">no signature needed</span>
         ) : sigs[role] ? (
-          <span className="badge tone-ok">✓ signed</span>
+          <Badge tone="ok">Signed</Badge>
         ) : (
-          <span className="badge tone-warn">waiting</span>
+          <Badge tone="muted">Waiting</Badge>
         )}
       </td>
     </tr>
@@ -134,20 +135,27 @@ export default function SignView() {
 
   return (
     <>
-      <span className="muted small">Registration request</span>
-      <h1>{terms?.title ?? 'Agreement'}</h1>
-      <p className="lede">
-        Before this agreement is registered, the lawyer and the client each sign exactly these terms with their own wallet.
-        Send this page to whoever still needs to sign.
-      </p>
+      <nav aria-label="Breadcrumb" className="crumb">
+        <Link href="/">My agreements</Link> / Signing request
+      </nav>
+      <section className="page-head">
+        <div>
+          <h1>{terms?.title ?? 'Agreement'}</h1>
+          <p className="lede" style={{ margin: 0 }}>
+            Before this agreement is registered, the lawyer and the client each sign exactly these terms with their own wallet.
+            Send this page to whoever still needs to sign.
+          </p>
+        </div>
+        {pending.agreementId ? <Badge tone="ok">Registered</Badge> : <Badge tone="info">Waiting for signatures</Badge>}
+      </section>
       {pending.agreementId && (
         <p className="notice">Registered as <Link href={`/agreements/${pending.agreementId}`}>agreement #{pending.agreementId}</Link>.</p>
       )}
       {expired && !pending.agreementId && <p className="error">This request has expired. The lawyer needs to save the terms again.</p>}
       {error && <p className="error">{error}</p>}
-      {busy && <p className="notice">{busy}…</p>}
+      {busy && <p className="notice" role="status">{busy}…</p>}
 
-      <div className="grid two" style={{ marginTop: '1rem' }}>
+      <div className="grid two" style={{ marginTop: 16, gap: 16 }}>
         <section className="panel stack">
           <h2 style={{ margin: 0 }}>What is being signed</h2>
           {terms ? (
@@ -177,7 +185,7 @@ export default function SignView() {
           </div>
           <div className="small">
             Checked by: Chainlink CRE{' '}
-            {same(r.verifier.forwarder, SEPOLIA_MOCK_FORWARDER) ? <span className="badge tone-warn">simulation</span> : <span className="badge tone-ok">production</span>}
+            {same(r.verifier.forwarder, SEPOLIA_MOCK_FORWARDER) ? <Badge tone="warn">Simulation</Badge> : <Badge tone="ok">Production</Badge>}
           </div>
           {document ? (
             <details>

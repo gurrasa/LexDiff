@@ -53,6 +53,19 @@ export const KIND_PLAIN = [
 
 export const isFailing = (f: Finding) => f.verification === Verification.Fail || f.verification === Verification.Inconclusive
 
+/** The result as shown to people. Only Pass, Fail and Inconclusive come from the check itself. */
+export type Shown = 'pass' | 'fail' | 'inconclusive' | 'not-checked'
+
+/**
+ * A structural Pass means the verified source has the right shape, but nothing was executed. On screen that is
+ * Inconclusive, never Pass. The on-chain record is unchanged; this is presentation only.
+ */
+export const shownResult = (verification: number, level?: 'value' | 'structural'): Shown =>
+  verification === Verification.Pass ? (level === 'structural' ? 'inconclusive' : 'pass')
+    : verification === Verification.Fail ? 'fail'
+    : verification === Verification.Inconclusive ? 'inconclusive'
+    : 'not-checked'
+
 /**
  * A failing property that still needs a decision: nobody decided yet, or someone disputed it and no fix is
  * underway. A dispute blocks the process until the lawyer requires a fix or the client accepts the risk.

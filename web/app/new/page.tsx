@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { isAddress, isHex, type Address, type Hex, zeroAddress } from 'viem'
@@ -158,22 +159,25 @@ export default function NewAgreement() {
 
   return (
     <>
-      <div className="row spread" style={{ margin: '1rem 0' }}>
+      <nav aria-label="Breadcrumb" className="crumb">
+        <Link href="/">My agreements</Link> / New agreement
+      </nav>
+      <section className="page-head">
         <div>
           <h1>Check an agreement against its smart contract</h1>
           <p className="lede" style={{ margin: 0 }}>
             Four steps: paste the agreement, check what Claude understood, say who is involved, and sign.
           </p>
         </div>
-        <div className="stack" style={{ textAlign: 'right' }}>
-          <button onClick={() => fillDemo('freelance-escrow')} disabled={!!busy}>Fill in the demo for me</button>
-          <button className="ghost small" onClick={() => fillDemo('website-redesign')} disabled={!!busy}>
+        <div className="row" style={{ justifyContent: 'flex-end' }}>
+          <button className="ghost" onClick={() => fillDemo('website-redesign')} disabled={!!busy}>
             Second demo: website redesign
           </button>
+          <button onClick={() => fillDemo('freelance-escrow')} disabled={!!busy}>Fill in the demo for me</button>
         </div>
-      </div>
+      </section>
       {error && <p className="error">{error}</p>}
-      {busy && <p className="notice">{busy}…</p>}
+      {busy && <p className="notice" role="status">{busy}…</p>}
 
       <section className="panel stack">
         <h2 style={{ margin: 0 }}>1. The agreement</h2>
@@ -197,7 +201,7 @@ export default function NewAgreement() {
         </div>
       </section>
 
-      <section className="panel stack" style={{ marginTop: '1rem' }}>
+      <section className="panel stack" style={{ marginTop: 16 }}>
         <h2 style={{ margin: 0 }}>2. What Claude understood</h2>
         <p className="small muted" style={{ margin: 0 }}>
           AI can be wrong, so a lawyer checks this before anything is signed. Each term comes with the exact sentence it was taken from.
@@ -229,7 +233,7 @@ export default function NewAgreement() {
         )}
       </section>
 
-      <section className="panel stack" style={{ marginTop: '1rem' }}>
+      <section className="panel stack" style={{ marginTop: 16 }}>
         <h2 style={{ margin: 0 }}>3. Who is involved</h2>
         <p className="small muted" style={{ margin: 0 }}>
           Wallet addresses for each role. For a one-person demo, use the same wallet everywhere.{' '}
@@ -292,7 +296,7 @@ export default function NewAgreement() {
         </details>
       </section>
 
-      <section className="panel stack" style={{ marginTop: '1rem' }}>
+      <section className="panel stack" style={{ marginTop: 16 }}>
         <h2 style={{ margin: 0 }}>4. Save and send for signatures</h2>
         <p className="small muted" style={{ margin: 0 }}>
           Saving creates a signing page. The lawyer and the client each open it and sign with their own wallet. That records
