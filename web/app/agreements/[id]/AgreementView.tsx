@@ -362,9 +362,13 @@ export default function AgreementView() {
     }
     if (stage.waitingFor === 'client' && pending && role === 'client') {
       return (
-        <button onClick={() => run('Approving the new contract', async () => void (await writeRegistry('acceptContract', [id, a.pendingTarget])))} disabled={!!busy}>
-          Register {shortAddr(a.pendingTarget)} for re-verification (not migrated or active)
-        </button>
+        <div className="stack">
+          <p className="error">This replacement is NOT operationally active. Client approval alone does not establish freelancer consent, refund safety, historical remedies, or migration of escrow funds.</p>
+          <button onClick={() => run('Registering replacement for re-verification', async () => void (await writeRegistry('acceptContract', [id, a.pendingTarget])))} disabled={!!busy || process.env.NODE_ENV === 'production'}>
+            Register {shortAddr(a.pendingTarget)} for re-verification (not migrated or active)
+          </button>
+          {process.env.NODE_ENV === 'production' && <p className="small">Replacement is blocked in the web UI pending an audited on-chain consent and migration gate. Direct contract calls are not blocked by this UI.</p>}
+        </div>
       )
     }
     if (stage.waitingFor === 'reviewer') {

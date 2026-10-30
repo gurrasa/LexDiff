@@ -2,6 +2,7 @@ import { BaseError, ContractFunctionRevertedError, createWalletClient, decodeEve
 import { privateKeyToAccount } from 'viem/accounts'
 import { sepolia } from 'viem/chains'
 import { rateLimited } from '@/lib/rate-limit'
+import { productionRegistrationPermitted } from '@/lib/legal/production-registration'
 import { authorizedMutation, boundedJson, payloadResponse } from '@/lib/server/request-guard'
 import { same, registry } from '@/lib/registry'
 import { publicClient, REGISTRY_ADDRESS, RPC_URL, registrationFromJson, registryAbi } from '@/lib/registry'
@@ -60,6 +61,9 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (functionName === 'registerAgreement' && !productionRegistrationPermitted()) {
+      return Response.json({ error: 'Production registration blocked until affected-party consent is enforced on-chain' }, { status: 503 })
+    }
     if (functionName === 'registerAgreement') {
       const reg = registrationFromJson(args[0] as Record<string, unknown>)
       if (![reg.client, reg.reviewer].some(a => same(a, caller))) return Response.json({ error: 'Forbidden' }, { status: 403 })
