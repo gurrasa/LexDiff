@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Newsreader } from 'next/font/google'
 import Link from 'next/link'
 import { Logo } from '@/components/ui'
+import NewAgreementLink from '@/components/NewAgreementLink'
 import ThemeToggle from '@/components/ThemeToggle'
 import WalletButton from '@/components/WalletButton'
 import './globals.css'
@@ -36,7 +37,7 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             </Link>
             <nav aria-label="Main">
               <Link href="/">My agreements</Link>
-              <Link href="/new" className="button">New agreement</Link>
+              <NewAgreementLink className="button">New agreement</NewAgreementLink>
               <WalletButton />
               <ThemeToggle />
             </nav>

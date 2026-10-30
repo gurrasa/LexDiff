@@ -326,7 +326,7 @@ export default function AgreementView() {
         'Hashes prove these documents are the ones anchored on-chain, not that their content is true or legally valid.',
         'A wallet signature proves control of a key, not the legal identity or authority of the signer.',
         'Structural checks read the verified source code; they do not execute it.',
-        'An accepted risk is still a failing property. Approving a contract does not move funds.',
+        'An accepted risk is still a failing property. Choosing a contract for checking does not move funds.',
       ],
     }
     const json = JSON.stringify(record, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
@@ -461,8 +461,8 @@ export default function AgreementView() {
     }
     if (stage.waitingFor === 'client' && pending && role === 'client') {
       return (
-        <button onClick={() => run('Approving the new contract', async () => void (await writeRegistry('acceptContract', [id, a.pendingTarget])))} disabled={!!busy}>
-          Approve {shortAddr(a.pendingTarget)} as the contract to fund
+        <button onClick={() => run('Sending the contract for checking', async () => void (await writeRegistry('acceptContract', [id, a.pendingTarget])))} disabled={!!busy}>
+          Send {shortAddr(a.pendingTarget)} to Chainlink for checking
         </button>
       )
     }
@@ -729,7 +729,12 @@ export default function AgreementView() {
                 ? 'Next step · your turn'
                 : `Next step · the ${ROLES[stage.waitingFor].label.toLowerCase()}`}
         </span>
-        <h2 id="next-step">{stage.title}</h2>
+        <h2 id="next-step">
+          {/* The registry calls a structural result a pass; on screen it is Inconclusive, so the headline says so too. */}
+          {stage.waitingFor === null && counts.fail === 0 && counts.inconclusive > 0
+            ? `Nothing fails · ${counts.inconclusive} checked in the code only, not executed`
+            : stage.title}
+        </h2>
         <p style={{ margin: 0 }}>{stage.detail}</p>
         {structuralFixes > 0 && (
           <p className="small" style={{ margin: 0 }}>
@@ -844,11 +849,11 @@ export default function AgreementView() {
                 </div>
                 {BigInt(operational.targetBalance) >= BigInt(operational.expectedAmount) && BigInt(operational.expectedAmount) > BigInt(0)
                   ? <Badge tone="ok">Funded</Badge>
-                  : <p className="small muted" style={{ margin: 0 }}>Not funded yet. The client funds the approved contract once every failing property is fixed or decided.</p>}
+                  : <p className="small muted" style={{ margin: 0 }}>Not funded yet. The client decides whether to fund it once every failing property is fixed or decided.</p>}
                 {operational.previousTarget && operational.previousBalance !== null && BigInt(operational.previousBalance) > BigInt(0) && (
                   <p className="error small" style={{ margin: 0 }}>
                     The previous contract {shortAddr(operational.previousTarget)} still holds {fmtAmount(operational.previousBalance, terms)}.
-                    Approving the new contract did not move these funds.
+                    Choosing the new contract did not move these funds.
                   </p>
                 )}
                 <span className="small muted">Read from Sepolia by Chainlink in the latest check.</span>
@@ -867,7 +872,7 @@ export default function AgreementView() {
               return (
                 <div key={i} className="row" style={{ gap: 8 }}>
                   <div style={{ flex: '1 1 160px' }}>
-                    <div style={{ fontWeight: 500 }}>V{i + 1} · {current ? 'approved by client' : 'replaced'}</div>
+                    <div style={{ fontWeight: 500 }}>V{i + 1} · {current ? 'chosen by the client' : 'replaced'}</div>
                     <a className="mono" style={{ fontSize: 12 }} href={`${EXPLORER}/address/${h}#code`} target="_blank" rel="noreferrer">{shortAddr(h)} ↗</a>
                   </div>
                   {current && <Badge tone={checks.some((c) => same(c.target, h)) ? 'info' : 'muted'}>{checks.some((c) => same(c.target, h)) ? 'Checked' : 'Waiting for Chainlink'}</Badge>}
@@ -918,14 +923,14 @@ export default function AgreementView() {
             <p className="small muted" style={{ margin: 0 }}>
               {lastCheck ? (
                 <>Contract <span className="mono">{shortAddr(lastCheck.target)}</span> · checked {fmtDate(lastCheck.timestamp)} by the agreement&apos;s own Chainlink CRE verifier</>
-              ) : noContract ? 'Nothing to check yet: the developer has not proposed a contract.' : 'The approved contract has not been checked yet.'}
+              ) : noContract ? 'Nothing to check yet: the developer has not proposed a contract.' : 'The contract has not been checked yet.'}
             </p>
           </div>
           {checks.length === 0 ? (
             <EmptyState title="Not checked yet">
               {noContract
-                ? 'Once the developer proposes the contract and the client approves it, Chainlink compares it with every term.'
-                : 'Chainlink compares the approved contract with every term. Results appear here.'}
+                ? 'Once the developer proposes the contract and the client sends it for checking, Chainlink compares it with every term.'
+                : 'Chainlink compares the contract with every term. Results appear here.'}
             </EmptyState>
           ) : (
             <>

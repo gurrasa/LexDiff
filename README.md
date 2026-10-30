@@ -49,7 +49,7 @@ In RACI terms: the developer is *Responsible* for fixes, the client is *Accounta
 
 The registry has no owner and no global settings. Each agreement names its own **verifier** (CRE forwarder, plus an optional pinned workflow owner and workflow ID) inside the registration that the client and reviewer sign. Nobody can change it afterwards, including the deployer.
 
-The parties sign the agreement **before the code exists**. The developer then deploys the escrow contract and **proposes** it; the client, who will fund it, **approves** it, and that starts the first check. A corrected contract goes through the same propose → approve path. (The registry also accepts a contract named in the registration, but the app always leaves it to the developer.) Approval chooses the contract; it does not move money. Each CRE report reads the token balance of the approved contract and of the previous one, so the record shows where the funds actually are.
+The parties sign the agreement **before the code exists**. The developer then deploys the escrow contract and **proposes** it; the client, who will fund it, **sends it for checking** (on-chain: `acceptContract`), and that starts the first check. A corrected contract goes through the same path. (The registry also accepts a contract named in the registration, but the app always leaves it to the developer.) Sending a contract for checking only chooses which contract is checked; it does not move money. The client decides whether to fund it after the results. Each CRE report reads the token balance of the current contract and of the previous one, so the record shows where the funds actually are.
 
 ## Status model: four independent dimensions
 
@@ -93,7 +93,7 @@ flowchart LR
 | Path | What it is |
 |---|---|
 | [contracts/src/LexDiffRegistry.sol](contracts/src/LexDiffRegistry.sol) | Evidence ledger: agreements, CRE checks, findings, signed decisions. Implements the CRE `IReceiver`. Report and decision logic live in [LexDiffLogic.sol](contracts/src/LexDiffLogic.sol); shared types in [ILexDiff.sol](contracts/src/ILexDiff.sol). |
-| [contracts/src/demo/](contracts/src/demo/) | `FreelanceEscrowV1` (flawed, "AI-generated"), `FreelanceEscrowV2` (remediated), `MockUSDC`. |
+| [contracts/src/demo/](contracts/src/demo/) | `FreelanceEscrowV1` (flawed, "AI-generated"), `FreelanceEscrowV2` (remediated: all three findings fixed), `MockUSDC`. |
 | [cre/lexdiff-workflow/](cre/lexdiff-workflow/) | The CRE workflow (TypeScript SDK). `compare.ts`, `source-analysis.ts` and `report.ts` are pure and unit-tested. |
 | [web/](web/) | Next.js app: Claude extraction, signing, evidence store (`/api/evidence`), findings dashboard. |
 | [agreements/](agreements/) | The demo agreement and an example of reviewed terms. |
@@ -128,7 +128,7 @@ Each report also lists the terms that were **not** checked automatically (today:
 
 **Agreement** ([agreements/freelance-escrow.md](agreements/freelance-escrow.md)): the client deposits 1,000 USDC. The freelancer delivers within 30 days, and the client has 7 days to review. If the deadline is missed, the client is refunded. No one may withdraw the escrowed funds.
 
-The lawyer and the client sign the agreement. The developer then proposes **FreelanceEscrowV1** and the client approves it. Chainlink's first check produces:
+The lawyer and the client sign the agreement. The developer then proposes **FreelanceEscrowV1** and the client sends it for checking. Chainlink's first check produces:
 
 - ⚠️ Delivery deadline: expected 30 days, actual 3 days
 - ❌ Refund if deadline is missed: no refund function
@@ -137,10 +137,10 @@ The lawyer and the client sign the agreement. The developer then proposes **Free
 
 **Then:**
 
-1. The reviewer signs **Remediation required** on the deadline and the refund. The developer signs **Acknowledge**.
-2. The client signs **Accepted risk** on the owner's withdrawal power. That is now on-chain proof the client saw that exact evidence.
-3. The developer deploys **FreelanceEscrowV2** and proposes it; the client accepts it.
-4. CRE re-runs. The deadline and refund become **Pass · Fix verified** (in check #2). The withdrawal power stays **Fail · Risk accepted by client**: accepted, not fixed.
+1. The reviewer signs **Remediation required** on all three. The developer signs **Acknowledge**.
+2. The developer deploys **FreelanceEscrowV2** (30 days, refund added, owner withdrawal removed) and proposes it; the client sends it for checking.
+3. CRE re-runs. All three become **Fix verified** in check #2, and nothing fails. The app shows the refund and the removed power as *Inconclusive* rather than Pass, because they come from the source code and were not executed.
+4. Alternatively, the client signs **Accepted risk** on a finding instead of a fix. It is then on-chain proof the client saw that exact evidence, and the property keeps showing **Fail · Risk accepted by client**: accepted, not fixed.
 5. Optionally, a party signs **Dispute** on any finding. It is shown as ⚖️ Disputed, and nothing is rewritten.
 
 ## Running it
@@ -253,11 +253,10 @@ The worker uses `cre/lexdiff-workflow/config.staging.json`, so `evidenceStoreUrl
 
 The agreement page shows where you are (*Agreement signed → Contract → Code checked → Decisions → Fix → Re-check → Decided*) and who has to act next. In presentation mode, switch roles in the header.
 
-1. As developer: propose the contract you deployed (`escrowV1` is prefilled). As client: approve it. **Chainlink checks it.** Three issues appear, each in plain language ("The agreement says 30 days / The code does 3 days").
-2. As reviewer: *Developer must fix this* on the deadline and refund. As developer: *I have seen this*.
-3. As client: *I accept this risk* on the hidden power.
-4. As developer: propose the corrected contract (`escrowV2` is prefilled). As client: approve it.
-5. **Run the Chainlink check** again. The deadline and refund show **Fixed: confirmed by Chainlink**.
+1. As developer: propose the contract you deployed (`escrowV1` is prefilled). As client: send it for checking. **Chainlink checks it.** Three issues appear, each in plain language ("The agreement says 30 days / The code does 3 days").
+2. As reviewer: *Developer must fix this* on all three. As developer: *I have seen this*.
+3. As developer: propose the corrected contract (`escrowV2` is prefilled). As client: send it for checking.
+4. Chainlink checks again. Nothing fails, and the agreement is **Decided**. (To show an accepted risk instead, the client signs *I accept this risk* on a finding before step 3.)
 
 ## Deployment and test matrix (29 October 2026)
 
@@ -269,7 +268,7 @@ The agreement page shows where you are (*Agreement signed → Contract → Code 
 | Registry tests | `forge test` | 22/22 pass |
 | Workflow tests | `npm test` in `cre/lexdiff-workflow` | 15/15 pass |
 | Workflow WASM build | `bun x cre-compile` | Builds |
-| Full flow on a local chain | web EIP-712 + workflow encoding + registry | Pass: V1 fails → decisions → V2 → fixes verified, accepted risk still fails |
+| Full flow on a local chain | web EIP-712 + workflow encoding + registry | Pass: V1 fails → decisions → V2 → fixes verified |
 | CRE simulation against Sepolia | CRE CLI simulator, `--broadcast`, mock forwarder | Ran end to end on the previous registry; container build tested on Linux |
 | Trust model | Sepolia **MockKeystoneForwarder** | Does not verify DON signatures (simulation). Production needs the KeystoneForwarder and a deployed workflow (requires CRE deploy access). |
 
@@ -299,6 +298,7 @@ cd cre/lexdiff-workflow && bun x cre-compile main.ts /tmp/lexdiff.wasm   # WASM 
 
 ## Future work
 
+- **Check before choosing.** Today the client sends a proposed contract for checking and decides on funding after the results. Next: Chainlink checks the *proposed* contract directly, so the client sees the results before it becomes the agreement's contract (registry change).
 - Behavioral refund check (simulate `refund()` after the deadline with state overrides).
 - Continuous monitoring: re-check upgradeable contracts on a cron trigger and alert if the code changes after signing.
 - More contract types (vesting, leases, tokenized assets).

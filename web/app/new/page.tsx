@@ -13,7 +13,8 @@ import {
   shortAddr,
   ZERO_BYTES32,
 } from '@/lib/registry'
-import { type Persona, personas } from '@/lib/identity'
+import { useCanCreate } from '@/components/NewAgreementLink'
+import { type Persona, PERSONA_LABEL, personas, setPersona } from '@/lib/identity'
 import { type EscrowTerms, escrowTermsSchema } from '@/lib/terms'
 
 const ZERO = '0x0000000000000000000000000000000000000000' as Address
@@ -29,6 +30,7 @@ export default function NewAgreement() {
   const [payeeIsDeveloper, setPayeeIsDeveloper] = useState(true)
   // Presentation mode: the demo wallets for each role, so one click fills all three.
   const [demoWallets, setDemoWallets] = useState<Record<Persona, Address> | null>(null)
+  const canCreate = useCanCreate()
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
@@ -192,6 +194,30 @@ export default function NewAgreement() {
   )
 
 
+  // Only the lawyer starts an agreement (see NewAgreementLink).
+  if (!canCreate) {
+    return (
+      <>
+        <nav aria-label="Breadcrumb" className="crumb">
+          <Link href="/">My agreements</Link> / New agreement
+        </nav>
+        <section className="page-head">
+          <div>
+            <h1>The lawyer starts the agreement</h1>
+            <p className="lede" style={{ margin: 0 }}>
+              The lawyer reads the agreement, checks the terms the AI extracted and sends you a signing link. As the client you sign
+              it; as the developer you propose the contract once it is signed.
+            </p>
+          </div>
+        </section>
+        <div className="row">
+          <button onClick={() => setPersona('lawyer')}>Switch to {PERSONA_LABEL.lawyer.icon} Lawyer ▸</button>
+          <Link href="/" className="button ghost">Back to my agreements</Link>
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <nav aria-label="Breadcrumb" className="crumb">
@@ -330,8 +356,8 @@ export default function NewAgreement() {
         </div>
         <p className="small muted" style={{ margin: 0 }}>
           <b>The smart contract comes later.</b> Once the lawyer and the client have signed, the developer deploys the escrow
-          contract with these client and payee wallets and proposes it on the agreement page. The client approves it, and that
-          starts the Chainlink check.
+          contract with these client and payee wallets and proposes it on the agreement page. The client sends it to Chainlink for checking,
+          and decides whether to fund it after seeing the results.
         </p>
       </section>
 

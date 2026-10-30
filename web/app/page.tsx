@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { type Address, type Hex, zeroAddress } from 'viem'
 import { ROLES, type Role, rolesOf, STEPS, stageOf } from '@/lib/plain'
 import { Badge, EmptyState, Loading, Result, StatCard } from '@/components/ui'
+import NewAgreementLink, { useCanCreate } from '@/components/NewAgreementLink'
 import {
   type Agreement,
   type Check,
@@ -46,6 +47,7 @@ export default function Home() {
   const [account, setAccount] = useState<Address | null>(null)
   const [pending, setPending] = useState<Pending[]>([])
   const [error, setError] = useState('')
+  const canCreate = useCanCreate()
 
   useEffect(() => watchAccount(setAccount), [])
 
@@ -140,7 +142,7 @@ export default function Home() {
               <span className="muted">Last checked {fmtDate(last.timestamp)}</span>
             </div>
           ) : (
-            <span className="small muted">{same(row.agreement.target, zeroAddress) ? 'No contract yet' : 'Contract approved'} · not checked</span>
+            <span className="small muted">{same(row.agreement.target, zeroAddress) ? 'No contract yet' : 'Contract chosen'} · not checked</span>
           )}
           <Link href={`/agreements/${row.id}`} className="button">View agreement</Link>
         </div>
@@ -190,10 +192,10 @@ export default function Home() {
               Connect wallet
             </button>
           )}
-          <Link href="/new" className="button">
+          <NewAgreementLink className="button">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
             Create agreement
-          </Link>
+          </NewAgreementLink>
         </div>
       </section>
       {error && <p className="error">{error}</p>}
@@ -248,9 +250,9 @@ export default function Home() {
                 {yourTurn.map(attentionCard)}
                 {yourTurn.length === 0 && pending.length === 0 && (
                   mine.length === 0 ? (
-                    <EmptyState title="No agreements yet" action={{ href: '/new', label: 'Create agreement' }}>
-                      A lawyer starts one and sends the client a signing link. The developer sees it here once it is registered with
-                      their wallet.
+                    <EmptyState title="No agreements yet" action={canCreate ? { href: '/new', label: 'Create agreement' } : undefined}>
+                      A lawyer starts one and sends the client a signing link. The client and the developer see it here once it is
+                      registered with their wallet.
                     </EmptyState>
                   ) : (
                     <EmptyState title="Nothing needs you right now">Your agreements are waiting for someone else, or are decided.</EmptyState>
@@ -271,7 +273,7 @@ export default function Home() {
             <section className="stack">
               <h2 className="section-title">Agreements on this registry</h2>
               {rows.length === 0 ? (
-                <EmptyState title="No agreements yet" action={{ href: '/new', label: 'Create agreement' }}>
+                <EmptyState title="No agreements yet" action={canCreate ? { href: '/new', label: 'Create agreement' } : undefined}>
                   A lawyer starts one and sends the client a signing link.
                 </EmptyState>
               ) : (
@@ -311,7 +313,7 @@ export default function Home() {
             <h2 id="how-title" style={{ fontFamily: 'inherit', fontSize: 14 }}>How LexDiff works</h2>
             <ol style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--ink-soft)' }}>
               <li>The lawyer and the client sign the agreement and its terms.</li>
-              <li>The developer proposes the contract; the client approves it.</li>
+              <li>The developer proposes the contract; the client sends it for checking.</li>
               <li>Chainlink checks the deployed contract against every term.</li>
               <li>Each failing property is fixed or knowingly accepted, with a signature.</li>
               <li>A fix counts only when Chainlink sees the property pass.</li>

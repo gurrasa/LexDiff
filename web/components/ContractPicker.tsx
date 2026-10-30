@@ -4,13 +4,12 @@ import { useEffect, useState } from 'react'
 import { isAddress } from 'viem'
 import { EXPLORER, same, shortAddr } from '@/lib/registry'
 
-type Demo = { escrowV1: string | null; escrowV2: string | null; websiteEscrow: string | null }
+type Demo = { escrowV1: string | null; escrowV2: string | null }
 type Info = { isContract: boolean; verified: boolean | null; name: string | null }
 
 const DEMOS: { key: keyof Demo; label: string; hint: string }[] = [
   { key: 'escrowV1', label: 'Freelance escrow V1', hint: 'Demo: deadline 3 days, no refund, owner can withdraw' },
-  { key: 'escrowV2', label: 'Freelance escrow V2', hint: 'Demo: the corrected version (30 days, refund added)' },
-  { key: 'websiteEscrow', label: 'Website redesign escrow', hint: 'Second demo: review period 2 days, extra admin power' },
+  { key: 'escrowV2', label: 'Freelance escrow V2', hint: 'Demo: the corrected version (30 days, refund added, no owner withdrawal)' },
 ]
 
 /** Pick a published demo contract or paste any Sepolia address; checks it exists and is verified. */

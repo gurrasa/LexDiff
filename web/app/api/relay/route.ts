@@ -24,7 +24,7 @@ const REASONS: Record<string, string> = {
   UnknownAgreement: 'Unknown agreement.',
   UnknownFinding: 'Unknown finding.',
   ZeroAddress: 'Every party needs a wallet address.',
-  NoContractYet: 'No contract has been approved yet: the developer proposes it and the client approves it first.',
+  NoContractYet: 'No contract to check yet: the developer proposes it and the client sends it for checking first.',
 }
 type Relayable = (typeof RELAYABLE)[number]
 

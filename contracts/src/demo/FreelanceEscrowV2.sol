@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -9,8 +8,8 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 /// @notice The developer's fix after LexDiff findings were assigned by counsel:
 ///           - delivery deadline corrected to 30 days            (finding -> Resolved by CRE)
 ///           - refund added for a missed deadline                (finding -> Resolved by CRE)
-///           - owner withdrawal kept: the client signed Accepted risk on it
-contract FreelanceEscrowV2 is Ownable {
+///           - owner withdrawal removed: nobody can take the escrowed funds (finding -> Resolved by CRE)
+contract FreelanceEscrowV2 {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable token;
@@ -30,7 +29,7 @@ contract FreelanceEscrowV2 is Ownable {
     event Released(address to, uint256 amount);
     event Refunded(address to, uint256 amount);
 
-    constructor(IERC20 token_, address client_, address freelancer_, uint256 amount_) Ownable(msg.sender) {
+    constructor(IERC20 token_, address client_, address freelancer_, uint256 amount_) {
         token = token_;
         client = client_;
         freelancer = freelancer_;
@@ -76,10 +75,6 @@ contract FreelanceEscrowV2 is Ownable {
         released = true;
         token.safeTransfer(client, amount);
         emit Refunded(client, amount);
-    }
-
-    function emergencyWithdraw(address to) external onlyOwner {
-        token.safeTransfer(to, token.balanceOf(address(this)));
     }
 
     function _release() private {

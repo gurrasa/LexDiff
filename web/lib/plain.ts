@@ -9,7 +9,7 @@ export const ROLES: Record<Role, { label: string; who: string; can: string }> = 
   client: {
     label: 'Client',
     who: 'Will fund the escrow.',
-    can: 'Can knowingly accept a failing property as a risk, and approves which contract to fund.',
+    can: 'Can knowingly accept a failing property as a risk, sends the contract to Chainlink for checking, and decides whether to fund it.',
   },
   reviewer: {
     label: 'Lawyer',
@@ -109,8 +109,8 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
     return pending
       ? {
           step: 1,
-          title: 'The client needs to approve the contract',
-          detail: 'The developer proposed the smart contract that will hold the money. Approving it starts the Chainlink check against the signed terms. It does not move any money.',
+          title: 'The client needs to send the contract for checking',
+          detail: 'The developer proposed the smart contract that will hold the money. Sending it only chooses which contract Chainlink compares with the signed terms. No money moves: you decide whether to fund it after you have seen the results.',
           waitingFor: 'client',
         }
       : {
@@ -131,7 +131,7 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   if (!same(lastCheck.target, a.target)) {
     return {
       step: 5,
-      title: 'Chainlink needs to check the approved contract',
+      title: 'Chainlink needs to check the new contract',
       detail: 'Only a new check can show which properties now pass. A fix counts only when the same property explicitly passes.',
       waitingFor: 'chainlink',
     }
@@ -147,8 +147,8 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   if (pending) {
     return {
       step: 4,
-      title: 'The client needs to approve the corrected contract',
-      detail: 'Approving chooses which contract the client will fund. It does not move any money; the next check reports where the funds actually are.',
+      title: 'The client needs to send the corrected contract for checking',
+      detail: 'Sending it only chooses which contract Chainlink checks next. No money moves; you decide whether to fund it after the results.',
       waitingFor: 'client',
     }
   }

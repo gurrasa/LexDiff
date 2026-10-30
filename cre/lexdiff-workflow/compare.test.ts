@@ -19,7 +19,7 @@ const terms = escrowTermsSchema.parse({
 })
 
 // ABI as Etherscan would return it for the demo escrows.
-const abiFor = (withRefund: boolean) =>
+const abiFor = (withRefund: boolean, withWithdraw = true) =>
 	JSON.stringify([
 		...['client', 'freelancer', 'token'].map((name) => ({
 			type: 'function', name, stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }],
@@ -30,11 +30,12 @@ const abiFor = (withRefund: boolean) =>
 		...['fund', 'markDelivered', 'approve', 'claimAfterReview', ...(withRefund ? ['refund'] : [])].map((name) => ({
 			type: 'function', name, stateMutability: 'nonpayable', inputs: [], outputs: [],
 		})),
-		{ type: 'function', name: 'emergencyWithdraw', stateMutability: 'nonpayable', inputs: [{ type: 'address' }], outputs: [] },
+		...(withWithdraw ? [{ type: 'function', name: 'emergencyWithdraw', stateMutability: 'nonpayable', inputs: [{ type: 'address' }], outputs: [] }] : []),
 	])
 
-const analysisFor = (file: string, name: string, withRefund: boolean) =>
-	analyzeSource({ SourceCode: read(`contracts/src/demo/${file}`), ABI: abiFor(withRefund), ContractName: name })
+const analysisFor = (file: string, name: string, withRefund: boolean, withWithdraw = true) =>
+	analyzeSource({ SourceCode: read(`contracts/src/demo/${file}`), ABI: abiFor(withRefund, withWithdraw), ContractName: name })
+const v2Analysis = () => analysisFor('FreelanceEscrowV2.sol', 'FreelanceEscrowV2', true, false)
 
 const onchain = (deliveryDays: bigint) => ({
 	client: CLIENT,
@@ -64,12 +65,20 @@ test('V1 reproduces the three demo findings', () => {
 	}
 })
 
-test('V2 fixes deadline and refund, keeps the withdrawal power', () => {
-	const analysis = analysisFor('FreelanceEscrowV2.sol', 'FreelanceEscrowV2', true)
-	const f = byClause(compare(terms, analysis, onchain(30n)))
+test('V2 fixes all three: deadline, refund and the withdrawal power', () => {
+	const v1 = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
+	const v2 = compare(terms, v2Analysis(), onchain(30n))
+	const f = byClause(v2)
 	assert.equal(f['Delivery deadline'].kind, Kind.Match)
 	assert.equal(f['Refund if deadline is missed'].kind, Kind.Match)
-	assert.equal(f['Admin power: withdraw-funds'].kind, Kind.HiddenPower)
+	assert.equal(f['Admin power: withdraw-funds'], undefined)
+	assert.ok(v2.every((x) => x.result === Result.Pass), 'nothing in V2 fails')
+	// The power V1 had is reported as an explicit Pass of the same finding, so the registry can verify the fix.
+	const previous = v1.filter((x) => x.kind === Kind.HiddenPower).map((x) => ({ key: x.key, kind: x.kind, verification: Result.Fail }))
+	const removed = removedPowers(previous, v2)
+	assert.equal(removed.length, 1)
+	assert.equal(removed[0].key, findingKey('power:emergencyWithdraw'))
+	assert.equal(removed[0].result, Result.Pass)
 })
 
 test('refund must check the deadline and pay the client', () => {
@@ -85,8 +94,9 @@ test('refund must check the deadline and pay the client', () => {
 
 test('finding keys are stable across versions', () => {
 	const v1 = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
-	const v2 = compare(terms, analysisFor('FreelanceEscrowV2.sol', 'FreelanceEscrowV2', true), onchain(30n))
-	assert.deepEqual(v1.map((f) => f.key), v2.map((f) => f.key))
+	const v2 = compare(terms, v2Analysis(), onchain(30n))
+	// Every term keeps its key; V2 only drops the hidden power V1 had.
+	assert.deepEqual(v2.map((f) => f.key), v1.filter((f) => f.kind !== Kind.HiddenPower).map((f) => f.key))
 	assert.equal(v1.find((f) => f.clause === 'Delivery deadline')!.key, findingKey('term:deliveryPeriod'))
 })
 

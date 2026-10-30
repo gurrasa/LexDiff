@@ -29,8 +29,8 @@ import type { EscrowTerms } from '@/lib/terms'
 type Role = 'client' | 'reviewer'
 
 const WHAT_YOU_SIGN: Record<Role, string> = {
-  reviewer: 'As the lawyer, you confirm these terms are a correct reading of the full agreement below. This records who approved the AI extraction.',
-  client: 'As the client, you confirm the full agreement, these terms, the parties, this contract and this checker.',
+  reviewer: 'As the lawyer, you confirm these terms are a correct reading of the full agreement above. This records who approved the AI extraction.',
+  client: 'As the client, you confirm the full agreement, these terms, the parties and this checker. The smart contract comes later: you choose when it is checked, and whether to fund it.',
 }
 
 export default function SignView() {
@@ -172,46 +172,9 @@ export default function SignView() {
             ))}
           </ol>
         </div>
-
-        {!account ? (
-          <button onClick={() => run('Connecting', async () => setAccount((await connectWallet()).account))} disabled={!!busy}>Connect wallet</button>
-        ) : toSign.length > 0 && !expired && !pending.agreementId ? (
-          <>
-            {toSign.map((role) => <p key={role} className="small" style={{ margin: 0 }}>{WHAT_YOU_SIGN[role]}</p>)}
-            <button onClick={sign} disabled={!!busy}>Sign as {toSign.map((x) => (x === 'reviewer' ? 'lawyer' : 'client')).join(' and ')}</button>
-          </>
-        ) : myRoles.length === 0 && !bothSigned ? (
-          <p className="small muted">This wallet ({shortAddr(account)}) is not asked to sign. Switch account in MetaMask if you are the lawyer or the client.</p>
-        ) : null}
-
-        {bothSigned && !pending.agreementId && (
-          <>
-            <p className="small" style={{ margin: 0 }}>Both have signed. Anyone can now put it on the blockchain.</p>
-            <button onClick={register} disabled={!!busy || expired}>Register on the blockchain</button>
-          </>
-        )}
-
-        {presenting && !bothSigned && toSign.length === 0 && (
-          <div className="row">
-            {!sigs.reviewer && <button onClick={() => setPersona('lawyer')}>Switch to {PERSONA_LABEL.lawyer.icon} Lawyer ▸</button>}
-            {sigs.reviewer && !sigs.client && <button onClick={() => setPersona('client')}>Switch to {PERSONA_LABEL.client.icon} Client ▸</button>}
-          </div>
-        )}
-
-        {!bothSigned && (
-          <div className="stack" style={{ marginTop: 4 }}>
-            <label>Share this link with whoever still needs to sign</label>
-            <div className="row">
-              <input className="mono small" readOnly value={link} onFocus={(e) => e.target.select()} />
-              <button className="ghost small" onClick={() => navigator.clipboard.writeText(link).then(() => setCopied(true))}>
-                {copied ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        )}
       </section>
 
-      <section className="panel stack">
+      <section className="panel stack" style={{ marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>What is being signed</h2>
         {terms ? (
           <>
@@ -237,7 +200,7 @@ export default function SignView() {
         <div className="small">
           Smart contract that will hold the money:{' '}
           {same(r.target, zeroAddress) ? (
-            <span className="muted">the developer builds and proposes it after you both sign; the client approves it before any money goes in.</span>
+            <span className="muted">the developer builds and proposes it after you both sign; the client sends it for checking and decides whether to fund it.</span>
           ) : (
             <a className="mono" href={`${EXPLORER}/address/${r.target}#code`} target="_blank" rel="noreferrer">{shortAddr(r.target)}</a>
           )}
@@ -267,6 +230,49 @@ export default function SignView() {
           Agreement fingerprint {r.agreementHash.slice(0, 18)}… · terms fingerprint {r.termsHash.slice(0, 18)}…
         </div>
       </section>
+
+      {/* Signing comes last: read what is being signed first. Nothing is left to do once registered. */}
+      {!pending.agreementId && (
+        <section aria-labelledby="sign-now" className="panel stack">
+          <h2 id="sign-now" style={{ margin: 0 }}>{bothSigned ? 'Register' : 'Sign'}</h2>
+          {!account ? (
+            <button onClick={() => run('Connecting', async () => setAccount((await connectWallet()).account))} disabled={!!busy}>Connect wallet</button>
+          ) : toSign.length > 0 && !expired && !pending.agreementId ? (
+            <>
+              {toSign.map((role) => <p key={role} className="small" style={{ margin: 0 }}>{WHAT_YOU_SIGN[role]}</p>)}
+              <button onClick={sign} disabled={!!busy}>Sign as {toSign.map((x) => (x === 'reviewer' ? 'lawyer' : 'client')).join(' and ')}</button>
+            </>
+          ) : myRoles.length === 0 && !bothSigned ? (
+            <p className="small muted">This wallet ({shortAddr(account)}) is not asked to sign. Switch account in MetaMask if you are the lawyer or the client.</p>
+          ) : null}
+
+          {bothSigned && !pending.agreementId && (
+            <>
+              <p className="small" style={{ margin: 0 }}>Both have signed. Anyone can now put it on the blockchain.</p>
+              <button onClick={register} disabled={!!busy || expired}>Register on the blockchain</button>
+            </>
+          )}
+
+          {presenting && !bothSigned && toSign.length === 0 && (
+            <div className="row">
+              {!sigs.reviewer && <button onClick={() => setPersona('lawyer')}>Switch to {PERSONA_LABEL.lawyer.icon} Lawyer ▸</button>}
+              {sigs.reviewer && !sigs.client && <button onClick={() => setPersona('client')}>Switch to {PERSONA_LABEL.client.icon} Client ▸</button>}
+            </div>
+          )}
+
+          {!bothSigned && (
+            <div className="stack" style={{ marginTop: 4 }}>
+              <label>Share this link with whoever still needs to sign</label>
+              <div className="row">
+                <input className="mono small" style={{ flex: '1 1 320px', width: 'auto' }} readOnly value={link} onFocus={(e) => e.target.select()} />
+                <button className="ghost small" onClick={() => navigator.clipboard.writeText(link).then(() => setCopied(true))}>
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
     </>
   )
 }
