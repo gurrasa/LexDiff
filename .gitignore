@@ -8,3 +8,4 @@ contracts/broadcast
 .DS_Store
 .cre_build_tmp.js
 demo-video/
+design/
