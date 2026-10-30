@@ -144,6 +144,72 @@ export default function NewAgreement() {
     preview = termsJson ? escrowTermsSchema.parse(JSON.parse(termsJson)) : null
   } catch {}
 
+  /** Edits one term in place; the JSON stays the single source of what gets signed. */
+  const editTerms = (change: (t: EscrowTerms) => void) => {
+    if (!preview) return
+    const next = structuredClone(preview)
+    change(next)
+    setTermsJson(JSON.stringify(next, null, 2))
+    resetSignatures()
+  }
+  const quoteFor = (term: RegExp) => preview?.sourceClauses.find((c) => term.test(c.term))?.quote
+  const TERM_ROWS: { label: string; term: RegExp; input: React.ReactNode }[] = preview
+    ? [
+        {
+          label: 'Title',
+          term: /^title$/i,
+          input: <input value={preview.title} onChange={(e) => editTerms((t) => void (t.title = e.target.value))} aria-label="Title" />,
+        },
+        {
+          label: 'Client',
+          term: /parties\.client/i,
+          input: <input value={preview.parties.client.name} onChange={(e) => editTerms((t) => void (t.parties.client.name = e.target.value))} aria-label="Client" />,
+        },
+        {
+          label: 'Payee (gets paid)',
+          term: /parties\.freelancer/i,
+          input: <input value={preview.parties.freelancer.name} onChange={(e) => editTerms((t) => void (t.parties.freelancer.name = e.target.value))} aria-label="Payee" />,
+        },
+        {
+          label: 'Amount',
+          term: /amount/i,
+          input: (
+            <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+              <input value={preview.payment.amount} inputMode="decimal" onChange={(e) => editTerms((t) => void (t.payment.amount = e.target.value.trim()))} aria-label="Amount" />
+              <input value={preview.payment.tokenSymbol} style={{ maxWidth: 110 }} onChange={(e) => editTerms((t) => void (t.payment.tokenSymbol = e.target.value.trim()))} aria-label="Token" />
+            </div>
+          ),
+        },
+        {
+          label: 'Delivery within (days)',
+          term: /deliveryPeriod/i,
+          input: <input type="number" min={0} value={preview.deadlines.deliveryPeriodDays} onChange={(e) => editTerms((t) => void (t.deadlines.deliveryPeriodDays = Number(e.target.value)))} aria-label="Delivery within (days)" />,
+        },
+        {
+          label: 'Client review period (days)',
+          term: /reviewPeriod/i,
+          input: <input type="number" min={0} value={preview.deadlines.reviewPeriodDays} onChange={(e) => editTerms((t) => void (t.deadlines.reviewPeriodDays = Number(e.target.value)))} aria-label="Client review period (days)" />,
+        },
+        {
+          label: 'Refund if the deadline is missed',
+          term: /refund/i,
+          input: (
+            <select value={preview.refund.onMissedDeadline ? 'yes' : 'no'} onChange={(e) => editTerms((t) => void (t.refund.onMissedDeadline = e.target.value === 'yes'))} aria-label="Refund if the deadline is missed">
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          ),
+        },
+        {
+          label: 'Special powers anyone may have',
+          term: /adminPowers/i,
+          input: <span>{preview.adminPowers.length ? preview.adminPowers.map((p) => p.category).join(', ') : 'None'}</span>,
+        },
+      ]
+    : []
+  const matched = new Set(TERM_ROWS.map((r) => quoteFor(r.term)).filter(Boolean))
+  const otherQuotes = preview?.sourceClauses.filter((c) => !matched.has(c.quote)) ?? []
+
   const field = (value: string, onChange: (v: string) => void, placeholder = '0x…') => (
     <input
       className="mono"
@@ -208,29 +274,37 @@ export default function NewAgreement() {
         </p>
         {!termsJson && <p className="muted">Nothing yet. Read an agreement in step 1.</p>}
         {preview && (
-          <div className="grid two">
-            <ul style={{ margin: 0 }}>
-              <li>Amount: <b>{preview.payment.amount} {preview.payment.tokenSymbol}</b></li>
-              <li>Delivery within: <b>{preview.deadlines.deliveryPeriodDays} days</b></li>
-              <li>Client review period: <b>{preview.deadlines.reviewPeriodDays} days</b></li>
-              <li>Refund if the deadline is missed: <b>{preview.refund.onMissedDeadline ? 'yes' : 'no'}</b></li>
-              <li>Special powers anyone may have: <b>{preview.adminPowers.length ? preview.adminPowers.map((p) => p.category).join(', ') : 'none'}</b></li>
-            </ul>
-            <div className="small">
-              <b>Where each term comes from</b>
-              <ul style={{ margin: '0.25rem 0 0' }}>
-                {preview.sourceClauses.map((c, i) => <li key={i}>“{c.quote}”</li>)}
-              </ul>
+          <div className="terms-form" role="table" aria-label="Extracted terms">
+            <div className="terms-row head" role="row">
+              <span role="columnheader">Term</span>
+              <span role="columnheader">What Claude read (you can correct it)</span>
+              <span role="columnheader">The agreement says</span>
             </div>
+            {TERM_ROWS.map((r) => {
+              const quote = quoteFor(r.term)
+              return (
+                <div key={r.label} className="terms-row" role="row">
+                  <span role="rowheader" className="term-label">{r.label}</span>
+                  <div role="cell">{r.input}</div>
+                  {r.label === 'Title' ? (
+                    <span role="cell" />
+                  ) : (
+                    <blockquote role="cell" className={quote ? '' : 'muted'}>{quote ? `“${quote}”` : 'No quote found. Check this term against the agreement.'}</blockquote>
+                  )}
+                </div>
+              )
+            })}
+            {otherQuotes.length > 0 && (
+              <details>
+                <summary>Other sentences Claude quoted ({otherQuotes.length})</summary>
+                <ul className="small" style={{ margin: '8px 0 0' }}>
+                  {otherQuotes.map((c, i) => <li key={i}><span className="mono">{c.term}</span>: “{c.quote}”</li>)}
+                </ul>
+              </details>
+            )}
           </div>
         )}
-        {termsJson && !preview && <p className="error small">The terms below are not in the expected format.</p>}
-        {termsJson && (
-          <details>
-            <summary>Correct the terms (JSON)</summary>
-            <textarea rows={14} value={termsJson} onChange={(e) => { setTermsJson(e.target.value); resetSignatures() }} />
-          </details>
-        )}
+        {termsJson && !preview && <p className="error small">The terms are not in the expected format. Correct them under Advanced below.</p>}
       </section>
 
       <section className="panel stack" style={{ marginTop: 16 }}>
@@ -281,20 +355,27 @@ export default function NewAgreement() {
           <ContractPicker value={roles.target} onChange={(v) => setRoles({ ...roles, target: v })} />
           {roles.target && <button className="ghost small" onClick={() => setRoles({ ...roles, target: '' })}>Leave it to the developer</button>}
         </details>
-        <details>
-          <summary>Advanced: verifier and amendments</summary>
-          <div className="grid two" style={{ marginTop: '0.5rem' }}>
+      </section>
+
+      <details className="panel" style={{ marginTop: 16 }}>
+        <summary>Advanced: raw terms, verifier and amendments</summary>
+        <div className="stack" style={{ marginTop: 12 }}>
+          <div>
+            <label>Terms as JSON (exactly what is signed)</label>
+            <textarea rows={14} value={termsJson} placeholder="Read an agreement in step 1 first." onChange={(e) => { setTermsJson(e.target.value); resetSignatures() }} />
+          </div>
+          <div className="grid two">
             <div><label>Chainlink CRE forwarder</label>{field(verifier.forwarder, (v) => setVerifier({ ...verifier, forwarder: v }))}</div>
             <div><label>Workflow owner (optional)</label>{field(verifier.workflowOwner, (v) => setVerifier({ ...verifier, workflowOwner: v }))}</div>
             <div><label>Workflow ID (optional)</label>{field(verifier.workflowId, (v) => setVerifier({ ...verifier, workflowId: v }), '0x… 32 bytes')}</div>
             <div><label>This amends agreement # (optional)</label>{field(supersedes, setSupersedes, 'e.g. 1')}</div>
           </div>
-          <p className="small muted">
+          <p className="small muted" style={{ margin: 0 }}>
             The verifier decides who may mark issues as fixed. The default is the Chainlink simulation forwarder used in this demo.
             It is locked in when you sign.
           </p>
-        </details>
-      </section>
+        </div>
+      </details>
 
       <section className="panel stack" style={{ marginTop: 16 }}>
         <h2 style={{ margin: 0 }}>4. Save and send for signatures</h2>

@@ -13,6 +13,11 @@ const creBinary = () => {
   return existsSync(installed) ? installed : 'cre'
 }
 
+/** Tells the page whether to offer the button; the POST below enforces the same switch. */
+export async function GET() {
+  return Response.json({ enabled: process.env.ENABLE_LOCAL_CRE?.trim() === 'true' })
+}
+
 export async function POST(request: Request) {
   if (process.env.ENABLE_LOCAL_CRE?.trim() !== 'true') {
     return Response.json(

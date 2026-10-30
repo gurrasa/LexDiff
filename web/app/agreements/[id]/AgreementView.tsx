@@ -69,6 +69,8 @@ const fmtAmount = (raw: string, terms: EscrowTerms | null) =>
   terms ? `${formatUnits(BigInt(raw), terms.payment.decimals)} ${terms.payment.tokenSymbol}` : raw
 
 type Filter = 'all' | Shown | 'decide'
+type Tab = 'overview' | 'findings' | 'evidence'
+const TABS: Tab[] = ['overview', 'findings', 'evidence']
 
 const KIND_TONE: Tone[] = ['ok', 'warn', 'bad', 'power']
 
@@ -117,8 +119,10 @@ export default function AgreementView() {
   const [newTarget, setNewTarget] = useState('')
   const [demo, setDemo] = useState<{ escrowV1?: Address; escrowV2?: Address }>({})
   const [filter, setFilter] = useState<Filter>('all')
+  const [tab, setTab] = useState<Tab>('overview')
   const [log, setLog] = useState('')
   const [presenting, setPresenting] = useState(false)
+  const [localCre, setLocalCre] = useState(false)
 
   const load = useCallback(async () => {
     const [agreement, findings, checks, history, chainEvents] = await Promise.all([
@@ -161,7 +165,25 @@ export default function AgreementView() {
 
   useEffect(() => {
     personas().then((p) => setPresenting(!!p))
+    // The browser button for a local CRE run only works where the server enables it (never on a hosted app).
+    fetch('/api/run-check').then((r) => r.json()).then((x) => setLocalCre(!!x.enabled)).catch(() => {})
+    // A link to #findings or #evidence opens that tab.
+    const fromHash = window.location.hash.slice(1) as Tab
+    if (TABS.includes(fromHash)) setTab(fromHash)
   }, [])
+
+  const openTab = (next: Tab) => {
+    setTab(next)
+    window.history.replaceState(null, '', `#${next}`)
+    document.getElementById('tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  // Arrow keys move between tabs (WAI-ARIA tabs pattern).
+  const onTabKey = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    const next = TABS[(TABS.indexOf(tab) + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length]
+    openTab(next)
+    document.getElementById(`tab-${next}`)?.focus()
+  }
 
   // Follow MetaMask: switching account switches role, so each person sees only their own actions.
   useEffect(
@@ -378,14 +400,19 @@ export default function AgreementView() {
 
   // In presentation mode, the next step's role is one click away.
   const ROLE_PERSONA: Partial<Record<Role, Persona>> = { reviewer: 'lawyer', client: 'client', developer: 'developer' }
-  const switchTo = (r: Role) => {
+  const switchTo = (r: Role, secondary = false) => {
     const p = ROLE_PERSONA[r]
     if (!presenting || !p || role === r) return null
     return (
-      <button onClick={() => setPersona(p)}>
+      <button className={secondary ? 'ghost' : undefined} onClick={() => setPersona(p)}>
         Switch to {PERSONA_LABEL[p].icon} {PERSONA_LABEL[p].label} ▸
       </button>
     )
+  }
+
+  const reviewDecisions = () => {
+    setFilter('decide')
+    openTab('findings')
   }
 
   const nextAction = () => {
@@ -399,7 +426,6 @@ export default function AgreementView() {
           {role && (
             <div className="row">
               <button
-                className="ghost"
                 disabled={!!busy}
                 onClick={() => run('Requesting a Chainlink check on Sepolia', async () => void (await writeRegistry('requestCheck', [id])))}
               >
@@ -407,17 +433,6 @@ export default function AgreementView() {
               </button>
             </div>
           )}
-          <details>
-            <summary>Running the checker yourself (simulation)</summary>
-            <p className="small">
-              In this demo the workflow runs through the CRE CLI simulator. Keep <code>node watch.ts</code> running in{' '}
-              <code>cre/lexdiff-workflow</code> and it answers every request automatically. On a local install you can also run one check directly:
-            </p>
-            <div className="row">
-              <button onClick={runCheck} disabled={!!busy}>Run the check on this machine</button>
-            </div>
-            <pre>{simulateCmd}</pre>
-          </details>
         </div>
       )
     }
@@ -452,19 +467,23 @@ export default function AgreementView() {
       )
     }
     if (stage.waitingFor === 'reviewer') {
-      return (
-        <div className="row">
-          {role !== 'reviewer' && role !== 'client' && switchTo('reviewer')}
-          {role === 'reviewer' && switchTo('client')}
-          <a href="#issues" className="button ghost">Go to the issues ↓</a>
-        </div>
-      )
+      // Decisions: the lawyer requires fixes, the client can accept a risk. Both act on the findings.
+      if (role === 'reviewer' || role === 'client') {
+        return (
+          <div className="row">
+            <button onClick={reviewDecisions}>Review {counts.decide} finding{counts.decide === 1 ? '' : 's'}</button>
+            {role === 'reviewer' && switchTo('client', true)}
+          </div>
+        )
+      }
+      return presenting ? switchTo('reviewer') : <p className="small" style={{ margin: 0 }}>Waiting for the lawyer or the client.</p>
     }
     if (stage.waitingFor && stage.waitingFor !== role && presenting) {
       return switchTo(stage.waitingFor as Role)
     }
     if (stage.waitingFor && stage.waitingFor !== role) {
-      return <p className="small">Connect the {ROLES[stage.waitingFor as Role].label.toLowerCase()}&apos;s wallet to continue.</p>
+      const who = ROLES[stage.waitingFor as Role].label.toLowerCase()
+      return <p className="small" style={{ margin: 0 }}>{role ? `Waiting for the ${who}.` : `Connect the ${who}'s wallet to continue.`}</p>
     }
     return null
   }
@@ -492,6 +511,11 @@ export default function AgreementView() {
     { id: 'decide', label: 'Needs a decision', n: counts.decide },
   ]
   const lastCheck = checks.at(-1)
+  const TAB_LIST: { id: Tab; label: string; count?: number }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'findings', label: 'Findings', count: checks.length ? counts.fail + counts.inconclusive : undefined },
+    { id: 'evidence', label: 'Evidence' },
+  ]
   const canRequestCheck = !!role && !noContract
 
   const explanation = (f: Finding, shown: Shown, before?: Past) => {
@@ -601,21 +625,33 @@ export default function AgreementView() {
             )}
           </div>
         )}
+        {/* Only what this role may sign (LexDiffLogic.applyDecision): fix = lawyer, accept = client, both only on a
+            failing property; any party may acknowledge, or dispute with a reason. */}
         {role && hasStory && (
           <div className="actions">
-            <input
-              value={note}
-              onChange={(e) => setNotes({ ...notes, [f.key]: e.target.value })}
-              placeholder="Add a note (optional, required to disagree)"
-              aria-label={`Note on ${clause}`}
-            />
             <span className="small muted" style={{ flex: '1 1 160px' }}>
-              {ds.length === 0 ? 'No decision yet' : 'Signed with your wallet; covers this exact finding.'}
+              {ds.length === 0 ? 'No decision yet' : 'Each signature covers this exact finding.'}
             </span>
             {canAssign && <button className="soft-bad" onClick={() => decide(f, DecisionType.RequireRemediation)} disabled={!!busy}>Developer must fix this</button>}
             {canAccept && <button className="ghost" onClick={() => decide(f, DecisionType.AcceptRisk)} disabled={!!busy}>I accept this risk</button>}
             {!ackedByMe && <button className="link" onClick={() => decide(f, DecisionType.Acknowledge)} disabled={!!busy}>I have seen this</button>}
-            <button className="link" onClick={() => decide(f, DecisionType.Dispute)} disabled={!!busy || !note.trim()}>I disagree</button>
+            <details style={{ flex: '1 1 100%' }}>
+              <summary>{canAssign || canAccept ? 'Add a note, or disagree' : 'I disagree with this result'}</summary>
+              <div className="stack" style={{ marginTop: 8 }}>
+                <input
+                  value={note}
+                  onChange={(e) => setNotes({ ...notes, [f.key]: e.target.value })}
+                  placeholder={canAssign || canAccept ? 'A note goes with the decision you sign' : 'Why you disagree (required)'}
+                  aria-label={`Note on ${clause}`}
+                />
+                <div className="row">
+                  <button className="ghost" onClick={() => decide(f, DecisionType.Dispute)} disabled={!!busy || !note.trim()}>
+                    Sign my disagreement
+                  </button>
+                  <span className="small muted">A dispute needs a reason. It is recorded next to the result and changes nothing else.</span>
+                </div>
+              </div>
+            </details>
           </div>
         )}
       </article>
@@ -674,14 +710,6 @@ export default function AgreementView() {
             </p>
           )}
         </div>
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="ghost" onClick={downloadRecord}>Export case record</button>
-          {canRequestCheck && (
-            <button disabled={!!busy} onClick={() => run('Requesting a Chainlink check on Sepolia', async () => void (await writeRegistry('requestCheck', [id])))}>
-              Request Chainlink check
-            </button>
-          )}
-        </div>
       </section>
 
       {a.supersededBy > BigInt(0) && (
@@ -690,158 +718,108 @@ export default function AgreementView() {
       {a.supersedes > BigInt(0) && <p className="notice">Amends <Link href={`/agreements/${a.supersedes}`}>agreement #{a.supersedes.toString()}</Link>.</p>}
       {!terms && <p className="error">The terms are unavailable or do not match the registered fingerprint.</p>}
 
-      {/* ---- Journey ---- */}
-      <section aria-label="Progress" className="progress">
-        <div className="stepper-wrap">
-          <ol className="stepper">
-            {STEPS.map((s, i) => (
-              <li key={s} className={i < stage.step || (stage.waitingFor === null && i === stage.step) ? 'done' : i === stage.step ? 'now' : ''} aria-current={i === stage.step ? 'step' : undefined}>
-                <div className="track">
-                  <span className="dot">{i < stage.step || (stage.waitingFor === null && i === stage.step) ? '✓' : i + 1}</span>
-                  {i < STEPS.length - 1 && <span className="line" />}
-                </div>
-                <span>{s}</span>
-              </li>
-            ))}
-          </ol>
-        </div>
-        <div className={`next${stage.waitingFor === null ? ' done' : ''}`}>
-          <span className="who">
-            {stage.waitingFor === null
-              ? 'Done'
-              : stage.waitingFor === 'chainlink'
-                ? 'Next: Chainlink'
-                : stage.waitingFor === role
-                  ? 'Your turn'
-                  : `Next: the ${ROLES[stage.waitingFor].label.toLowerCase()}`}
-          </span>
-          <h2>{stage.title}</h2>
-          <p style={{ margin: 0 }}>{stage.detail}</p>
-          {structuralFixes > 0 && (
-            <p className="small" style={{ margin: 0 }}>
-              {structuralFixes} of the fixes {structuralFixes === 1 ? 'was' : 'were'} found only in the code and not executed, so they show as
-              Inconclusive below.
-            </p>
-          )}
-          {nextAction()}
-        </div>
+      {/* ---- Next step: who acts, and the one thing they do ---- */}
+      <section aria-labelledby="next-step" className={`next card${stage.waitingFor === null ? ' done' : ''}`}>
+        <span className="who">
+          {stage.waitingFor === null
+            ? 'Done'
+            : stage.waitingFor === 'chainlink'
+              ? 'Next step · Chainlink'
+              : stage.waitingFor === role || (stage.waitingFor === 'reviewer' && role === 'client')
+                ? 'Next step · your turn'
+                : `Next step · the ${ROLES[stage.waitingFor].label.toLowerCase()}`}
+        </span>
+        <h2 id="next-step">{stage.title}</h2>
+        <p style={{ margin: 0 }}>{stage.detail}</p>
+        {structuralFixes > 0 && (
+          <p className="small" style={{ margin: 0 }}>
+            {structuralFixes} of the fixes {structuralFixes === 1 ? 'was' : 'were'} found only in the code and not executed, so they show as
+            Inconclusive in the findings.
+          </p>
+        )}
+        {nextAction()}
       </section>
 
       {error && <p className="error">{error}</p>}
       {busy && <p className="notice" role="status">{busy}…</p>}
-      {log && (
-        <details open={!!busy} style={{ marginBottom: 16 }}>
-          <summary>Chainlink CRE log</summary>
-          <pre className="log">{log}</pre>
-        </details>
-      )}
 
-      <div className="columns">
-        {/* ---- Findings ---- */}
-        <section aria-labelledby="found" id="issues" className="primary">
-          <div>
-            <h2 id="found" style={{ margin: '0 0 4px', fontSize: 26 }}>What Chainlink found</h2>
-            <p className="small muted" style={{ margin: 0 }}>
-              {lastCheck ? (
-                <>Contract <span className="mono">{shortAddr(lastCheck.target)}</span> · checked {fmtDate(lastCheck.timestamp)} by the agreement&apos;s own Chainlink CRE verifier</>
-              ) : noContract ? 'Nothing to check yet: the developer has not proposed a contract.' : 'The approved contract has not been checked yet.'}
-            </p>
-          </div>
+      <div role="tablist" aria-label="Agreement" className="tabs" id="tabs">
+        {TAB_LIST.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`panel-${t.id}`}
+            tabIndex={tab === t.id ? 0 : -1}
+            onClick={() => openTab(t.id)}
+            onKeyDown={onTabKey}
+          >
+            {t.label}
+            {t.count !== undefined && <span className="count">{t.count}</span>}
+          </button>
+        ))}
+      </div>
 
-          {checks.length === 0 ? (
-            <EmptyState title="Not checked yet">
-              {noContract
-                ? 'Once the developer proposes the contract and the client approves it, Chainlink compares it with every term.'
-                : 'Chainlink compares the approved contract with every term. Results appear here.'}
-            </EmptyState>
-          ) : (
-            <>
-              <div className="stats compact">
-                <StatCard label="Pass" icon="pass" color="var(--ok)" value={counts.pass} />
-                <StatCard label="Fail" icon="fail" color="var(--bad)" value={counts.fail} />
-                <StatCard label="Inconclusive" icon="inconclusive" color="var(--warn)" value={counts.inconclusive} />
-                <StatCard label="Not checked" icon="not-checked" value={counts['not-checked']} />
+      {/* ---- Overview ---- */}
+      {tab === 'overview' && (
+        <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" className="columns">
+          <div className="primary">
+            <section aria-label="Progress" className="progress" style={{ marginBottom: 0 }}>
+              <div className="stepper-wrap">
+                <ol className="stepper">
+                  {STEPS.map((s, i) => (
+                    <li key={s} className={i < stage.step || (stage.waitingFor === null && i === stage.step) ? 'done' : i === stage.step ? 'now' : ''} aria-current={i === stage.step ? 'step' : undefined}>
+                      <div className="track">
+                        <span className="dot">{i < stage.step || (stage.waitingFor === null && i === stage.step) ? '✓' : i + 1}</span>
+                        {i < STEPS.length - 1 && <span className="line" />}
+                      </div>
+                      <span>{s}</span>
+                    </li>
+                  ))}
+                </ol>
               </div>
+            </section>
 
-              {coverage && (
-                <details className="panel small">
-                  <summary>
-                    What was checked: {coverage.checked} terms, {coverage.byLevel.value} read from the live contract, {coverage.byLevel.structural} from
-                    the source code only{coverage.unchecked.length > 0 ? ` · ${coverage.unchecked.length} need a human` : ''}
-                  </summary>
-                  <p style={{ margin: '10px 0 0' }}>
-                    A result from the source code means the code has the right shape. Nothing was executed, so it shows as Inconclusive, never Pass.
-                  </p>
-                  {coverage.unchecked.length > 0 ? (
-                    <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
-                      {coverage.unchecked.map((u, i) => (
-                        <li key={i}>
-                          <Badge tone="muted">{u.term}</Badge> {u.text} <span className="muted">· {u.reason}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p style={{ margin: '8px 0 0' }}>Every term in the agreement was checked.</p>
-                  )}
-                </details>
-              )}
+            {checks.length > 0 && (
+              <section aria-label="Latest check" className="stack">
+                <div className="stats compact">
+                  <StatCard label="Pass" icon="pass" color="var(--ok)" value={counts.pass} />
+                  <StatCard label="Fail" icon="fail" color="var(--bad)" value={counts.fail} />
+                  <StatCard label="Inconclusive" icon="inconclusive" color="var(--warn)" value={counts.inconclusive} />
+                  <StatCard label="Not checked" icon="not-checked" value={counts['not-checked']} />
+                </div>
+                <div className="row spread">
+                  <span className="small muted">
+                    {lastCheck && <>Contract <span className="mono">{shortAddr(lastCheck.target)}</span> · checked {fmtDate(lastCheck.timestamp)}</>}
+                  </span>
+                  <button className="ghost small" onClick={() => openTab('findings')}>View all findings</button>
+                </div>
+              </section>
+            )}
 
-              <div role="group" aria-label="Filter findings" className="filters">
-                {FILTERS.filter((x) => x.id === 'all' || x.n > 0 || x.id === filter).map((x) => (
-                  <button key={x.id} aria-pressed={filter === x.id} onClick={() => setFilter(x.id)}>
-                    {x.label} · {x.n}
-                  </button>
-                ))}
+            <section aria-labelledby="happened" className="panel">
+              <div className="row spread" style={{ alignItems: 'baseline', paddingBottom: 6 }}>
+                <h2 id="happened" style={{ margin: 0 }}>What happened</h2>
+                <span className="small muted">Append-only · signed, or written by Chainlink</span>
               </div>
-
-              {visible.length === 0 ? (
-                <EmptyState title="Nothing matches this filter">
-                  <button className="link" style={{ padding: 0, minHeight: 0 }} onClick={() => setFilter('all')}>Show all findings</button>
-                </EmptyState>
-              ) : (
-                visible.map(findingCard)
-              )}
-            </>
-          )}
-
-          {/* ---- History ---- */}
-          <section aria-labelledby="happened" className="panel">
-            <div className="row spread" style={{ alignItems: 'baseline', paddingBottom: 6 }}>
-              <h2 id="happened" style={{ margin: 0 }}>What happened</h2>
-              <span className="small muted">Append-only · signed, or written by Chainlink</span>
-            </div>
-            <ol className="timeline">
-              {events.map((e, i) => (
-                <li key={i}>
-                  <span className="when">{fmtDate(e.t)}</span>
-                  <div className="what">
-                    <div style={{ fontWeight: 500 }}>{e.text}</div>
-                    {e.note && <div className="small">“{e.note}”</div>}
-                    <div className="small muted">{e.who}</div>
-                  </div>
-                  {e.link && <a className="mono" style={{ fontSize: 12 }} href={e.link.href} target="_blank" rel="noreferrer">{e.link.label}</a>}
-                </li>
-              ))}
-            </ol>
-            <details>
-              <summary>Sepolia transaction trail</summary>
               <ol className="timeline">
-                {chainEvents.map((event, index) => (
-                  <li key={`${event.transactionHash}-${index}`}>
-                    <span className="when">block {event.blockNumber.toString()}</span>
-                    <span className="what" style={{ fontWeight: 500 }}>{event.eventName}</span>
-                    <a className="mono" style={{ fontSize: 12 }} href={`${EXPLORER}/tx/${event.transactionHash}`} target="_blank" rel="noreferrer">
-                      tx {event.transactionHash.slice(0, 6)}…{event.transactionHash.slice(-4)}
-                    </a>
+                {events.map((e, i) => (
+                  <li key={i}>
+                    <span className="when">{fmtDate(e.t)}</span>
+                    <div className="what">
+                      <div style={{ fontWeight: 500 }}>{e.text}</div>
+                      {e.note && <div className="small">“{e.note}”</div>}
+                      <div className="small muted">{e.who}</div>
+                    </div>
+                    {e.link && <a className="mono" style={{ fontSize: 12 }} href={e.link.href} target="_blank" rel="noreferrer">{e.link.label}</a>}
                   </li>
                 ))}
               </ol>
-            </details>
-          </section>
-        </section>
+            </section>
+          </div>
 
-        {/* ---- Sidebar ---- */}
-        <aside>
+          <aside>
           <section aria-labelledby="parties" className="panel stack">
             <h2 id="parties">Parties</h2>
             {parties.map((p) => (
@@ -928,26 +906,175 @@ export default function AgreementView() {
             )}
           </section>
 
-          <section aria-labelledby="verifier" className="panel subtle stack">
-            <h2 id="verifier" style={{ fontFamily: 'inherit', fontSize: 14 }}>Independent verifier</h2>
-            <p className="small" style={{ margin: 0, color: 'var(--ink-soft)' }}>
-              Chainlink CRE workflow, pinned at registration. Chosen and signed by the parties. Nobody can change it.
+          </aside>
+        </div>
+      )}
+
+      {/* ---- Findings ---- */}
+      {tab === 'findings' && (
+        <section role="tabpanel" id="panel-findings" aria-labelledby="tab-findings" className="stack">
+          <div>
+            <h2 style={{ margin: '0 0 4px', fontSize: 26 }}>What Chainlink found</h2>
+            <p className="small muted" style={{ margin: 0 }}>
+              {lastCheck ? (
+                <>Contract <span className="mono">{shortAddr(lastCheck.target)}</span> · checked {fmtDate(lastCheck.timestamp)} by the agreement&apos;s own Chainlink CRE verifier</>
+              ) : noContract ? 'Nothing to check yet: the developer has not proposed a contract.' : 'The approved contract has not been checked yet.'}
             </p>
-            <div className="row" style={{ gap: 8 }}>
-              <span className="mono muted" style={{ fontSize: 12 }}>forwarder {shortAddr(a.verifier.forwarder)}</span>
-              {isMock ? <Badge tone="warn">Simulation</Badge> : <Badge tone="ok">Production</Badge>}
-            </div>
-            <details>
-              <summary>Fingerprints</summary>
+          </div>
+          {checks.length === 0 ? (
+            <EmptyState title="Not checked yet">
+              {noContract
+                ? 'Once the developer proposes the contract and the client approves it, Chainlink compares it with every term.'
+                : 'Chainlink compares the approved contract with every term. Results appear here.'}
+            </EmptyState>
+          ) : (
+            <>
+              <div className="stats compact">
+                <StatCard label="Pass" icon="pass" color="var(--ok)" value={counts.pass} />
+                <StatCard label="Fail" icon="fail" color="var(--bad)" value={counts.fail} />
+                <StatCard label="Inconclusive" icon="inconclusive" color="var(--warn)" value={counts.inconclusive} />
+                <StatCard label="Not checked" icon="not-checked" value={counts['not-checked']} />
+              </div>
+
+              {coverage && (
+                <details className="panel small">
+                  <summary>
+                    What was checked: {coverage.checked} terms, {coverage.byLevel.value} read from the live contract, {coverage.byLevel.structural} from
+                    the source code only{coverage.unchecked.length > 0 ? ` · ${coverage.unchecked.length} need a human` : ''}
+                  </summary>
+                  <p style={{ margin: '10px 0 0' }}>
+                    A result from the source code means the code has the right shape. Nothing was executed, so it shows as Inconclusive, never Pass.
+                  </p>
+                  {coverage.unchecked.length > 0 ? (
+                    <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+                      {coverage.unchecked.map((u, i) => (
+                        <li key={i}>
+                          <Badge tone="muted">{u.term}</Badge> {u.text} <span className="muted">· {u.reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p style={{ margin: '8px 0 0' }}>Every term in the agreement was checked.</p>
+                  )}
+                </details>
+              )}
+
+              <div role="group" aria-label="Filter findings" className="filters">
+                {FILTERS.filter((x) => x.id === 'all' || x.n > 0 || x.id === filter).map((x) => (
+                  <button key={x.id} aria-pressed={filter === x.id} onClick={() => setFilter(x.id)}>
+                    {x.label} · {x.n}
+                  </button>
+                ))}
+              </div>
+
+              {visible.length === 0 ? (
+                <EmptyState title="Nothing matches this filter">
+                  <button className="link" style={{ padding: 0, minHeight: 0 }} onClick={() => setFilter('all')}>Show all findings</button>
+                </EmptyState>
+              ) : (
+                visible.map(findingCard)
+              )}
+            </>
+          )}
+
+        </section>
+      )}
+
+      {/* ---- Evidence ---- */}
+      {tab === 'evidence' && (
+        <div role="tabpanel" id="panel-evidence" aria-labelledby="tab-evidence" className="columns">
+          <div className="primary">
+            <section aria-labelledby="export" className="panel stack">
+              <h2 id="export">Case record</h2>
+              <p className="small muted" style={{ margin: 0 }}>
+                One file with the agreement, terms, reports, findings, signed decisions and transactions. Anyone can check it on the
+                Verify page against Sepolia, without trusting LexDiff.
+              </p>
+              <div className="row">
+                <button onClick={downloadRecord}>Export case record</button>
+                <Link href="/verify" className="button ghost">Verify a record</Link>
+              </div>
+            </section>
+
+            <section aria-labelledby="trail" className="panel">
+              <h2 id="trail">Sepolia transaction trail</h2>
+              <ol className="timeline">
+                {chainEvents.map((event, index) => (
+                  <li key={`${event.transactionHash}-${index}`}>
+                    <span className="when">block {event.blockNumber.toString()}</span>
+                    <span className="what" style={{ fontWeight: 500 }}>{event.eventName}</span>
+                    <a className="mono" style={{ fontSize: 12 }} href={`${EXPLORER}/tx/${event.transactionHash}`} target="_blank" rel="noreferrer">
+                      tx {event.transactionHash.slice(0, 6)}…{event.transactionHash.slice(-4)}
+                    </a>
+                  </li>
+                ))}
+              </ol>
+              <p className="small muted" style={{ margin: '8px 0 0' }}>Every entry is on Sepolia and cannot be edited afterwards.</p>
+            </section>
+
+            <section aria-labelledby="checker" className="panel stack">
+              <h2 id="checker">Chainlink checks</h2>
+              <p className="small muted" style={{ margin: 0 }}>
+                The Chainlink CRE workflow answers every check request on its own. A party can ask for a new check at any time.
+              </p>
+              {canRequestCheck && (
+                <div className="row">
+                  <button
+                    className="ghost"
+                    disabled={!!busy}
+                    onClick={() => run('Requesting a Chainlink check on Sepolia', async () => void (await writeRegistry('requestCheck', [id])))}
+                  >
+                    Ask Chainlink to check again
+                  </button>
+                </div>
+              )}
+              {log && (
+                <details open={!!busy}>
+                  <summary>Chainlink CRE log</summary>
+                  <pre className="log">{log}</pre>
+                </details>
+              )}
+              <details>
+                <summary>Running the checker yourself (simulation)</summary>
+                <p className="small">
+                  In this demo the workflow runs through the CRE CLI simulator. Keep <code>node watch.ts</code> running in{' '}
+                  <code>cre/lexdiff-workflow</code> and it answers every request automatically.{' '}
+                  {localCre ? 'This install can also run one check directly:' : 'To run one check yourself, use the CRE CLI:'}
+                </p>
+                {localCre && (
+                  <div className="row">
+                    <button onClick={runCheck} disabled={!!busy}>Run the check on this machine</button>
+                  </div>
+                )}
+                <pre>{simulateCmd}</pre>
+              </details>
+            </section>
+          </div>
+
+          <aside>
+            <section aria-labelledby="verifier" className="panel subtle stack">
+              <h2 id="verifier" style={{ fontFamily: 'inherit', fontSize: 14 }}>Independent verifier</h2>
+              <p className="small" style={{ margin: 0, color: 'var(--ink-soft)' }}>
+                Chainlink CRE workflow, pinned at registration. Chosen and signed by the parties. Nobody can change it.
+              </p>
+              <div className="row" style={{ gap: 8 }}>
+                <span className="mono muted" style={{ fontSize: 12 }}>forwarder {shortAddr(a.verifier.forwarder)}</span>
+                {isMock ? <Badge tone="warn">Simulation</Badge> : <Badge tone="ok">Production</Badge>}
+              </div>
+            </section>
+
+            <section aria-labelledby="fingerprints" className="panel stack">
+              <h2 id="fingerprints">Fingerprints</h2>
+              <p className="small muted" style={{ margin: 0 }}>Only these hashes are on-chain. The documents they fingerprint stay off-chain.</p>
               <div className="evidence stack" style={{ marginTop: 8 }}>
                 <div>Agreement document {a.agreementHash} {agreementDoc ? '✓' : ''}</div>
                 <div>Terms {a.termsHash} · <a href={a.termsURI} target="_blank" rel="noreferrer">terms</a></div>
                 {checks.map((c, i) => <div key={i}>Check #{i + 1}: source {c.codeHash} · report {c.reportHash}</div>)}
               </div>
-            </details>
-          </section>
-        </aside>
-      </div>
+            </section>
+          </aside>
+        </div>
+      )}
     </>
   )
 }

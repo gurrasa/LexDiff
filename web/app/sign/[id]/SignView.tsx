@@ -114,24 +114,17 @@ export default function SignView() {
       router.push(`/agreements/${agreementId}`)
     })
 
-  const party = (label: string, role: Role | null, address: Address) => (
-    <tr>
-      <td><b>{label}</b></td>
-      <td className="mono small">
-        {shortAddr(address)}
-        {account && same(account, address) && <span style={{ marginLeft: 6 }}><Badge tone="info">you</Badge></span>}
-      </td>
-      <td>
-        {role === null ? (
-          <span className="muted small">no signature needed</span>
-        ) : sigs[role] ? (
-          <Badge tone="ok">Signed</Badge>
-        ) : (
-          <Badge tone="muted">Waiting</Badge>
-        )}
-      </td>
-    </tr>
-  )
+  // Signing as one row: each signer in turn, then registration on Sepolia.
+  const steps: { label: string; address?: Address; done: boolean }[] = [
+    ...(oneSigner
+      ? [{ label: 'Lawyer & client', address: r.reviewer, done: bothSigned }]
+      : [
+          { label: 'Lawyer', address: r.reviewer, done: !!sigs.reviewer },
+          { label: 'Client', address: r.client, done: !!sigs.client },
+        ]),
+    { label: 'Registered', done: !!pending.agreementId },
+  ]
+  const current = steps.findIndex((x) => !x.done)
 
   return (
     <>
@@ -148,116 +141,132 @@ export default function SignView() {
         </div>
         {pending.agreementId ? <Badge tone="ok">Registered</Badge> : <Badge tone="info">Waiting for signatures</Badge>}
       </section>
-      {pending.agreementId && (
-        <p className="notice">Registered as <Link href={`/agreements/${pending.agreementId}`}>agreement #{pending.agreementId}</Link>.</p>
-      )}
       {expired && !pending.agreementId && <p className="error">This request has expired. The lawyer needs to save the terms again.</p>}
       {error && <p className="error">{error}</p>}
       {busy && <p className="notice" role="status">{busy}…</p>}
 
-      <div className="grid two" style={{ marginTop: 16, gap: 16 }}>
-        <section className="panel stack">
-          <h2 style={{ margin: 0 }}>What is being signed</h2>
-          {terms ? (
-            <>
-              <ul style={{ margin: 0 }}>
-                <li>{terms.parties.client.name} pays <b>{terms.payment.amount} {terms.payment.tokenSymbol}</b> into the escrow</li>
-                <li>{terms.parties.freelancer.name} delivers within <b>{terms.deadlines.deliveryPeriodDays} days</b></li>
-                <li>Client review period: <b>{terms.deadlines.reviewPeriodDays} days</b></li>
-                <li>Refund if the deadline is missed: <b>{terms.refund.onMissedDeadline ? 'yes' : 'no'}</b></li>
-                <li>Special powers anyone may have: <b>{terms.adminPowers.length ? terms.adminPowers.map((p) => p.category).join(', ') : 'none'}</b></li>
-              </ul>
-              <details>
-                <summary>Where each term comes from</summary>
-                <ul className="small">{terms.sourceClauses.map((c, i) => <li key={i}>“{c.quote}”</li>)}</ul>
-              </details>
-            </>
-          ) : (
-            <p className="error small">The terms could not be loaded or do not match their fingerprint.</p>
-          )}
-          <div className="small">
-            Smart contract that will hold the money:{' '}
-            {same(r.target, zeroAddress) ? (
-              <span className="muted">the developer builds and proposes it after you both sign; the client approves it before any money goes in.</span>
-            ) : (
-              <a className="mono" href={`${EXPLORER}/address/${r.target}#code`} target="_blank" rel="noreferrer">{shortAddr(r.target)}</a>
-            )}
+      <section aria-label="Signing progress" className="progress">
+        <div className="stepper-wrap">
+          <ol className="stepper three">
+            {steps.map((x, i) => (
+              <li key={x.label} className={x.done ? 'done' : i === current ? 'now' : ''} aria-current={i === current ? 'step' : undefined}>
+                <div className="track">
+                  <span className="dot">{x.done ? '✓' : i + 1}</span>
+                  {i < steps.length - 1 && <span className="line" />}
+                </div>
+                <span>{x.label}</span>
+                <span className="small muted" style={{ fontWeight: 400 }}>
+                  {x.address ? (
+                    <>
+                      <span className="mono">{shortAddr(x.address)}</span>
+                      {account && same(account, x.address) && ' · you'}
+                      {' · '}{x.done ? 'signed' : 'waiting'}
+                    </>
+                  ) : pending.agreementId ? (
+                    <Link href={`/agreements/${pending.agreementId}`}>agreement #{pending.agreementId}</Link>
+                  ) : (
+                    'on Sepolia, after both sign'
+                  )}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        {!account ? (
+          <button onClick={() => run('Connecting', async () => setAccount((await connectWallet()).account))} disabled={!!busy}>Connect wallet</button>
+        ) : toSign.length > 0 && !expired && !pending.agreementId ? (
+          <>
+            {toSign.map((role) => <p key={role} className="small" style={{ margin: 0 }}>{WHAT_YOU_SIGN[role]}</p>)}
+            <button onClick={sign} disabled={!!busy}>Sign as {toSign.map((x) => (x === 'reviewer' ? 'lawyer' : 'client')).join(' and ')}</button>
+          </>
+        ) : myRoles.length === 0 && !bothSigned ? (
+          <p className="small muted">This wallet ({shortAddr(account)}) is not asked to sign. Switch account in MetaMask if you are the lawyer or the client.</p>
+        ) : null}
+
+        {bothSigned && !pending.agreementId && (
+          <>
+            <p className="small" style={{ margin: 0 }}>Both have signed. Anyone can now put it on the blockchain.</p>
+            <button onClick={register} disabled={!!busy || expired}>Register on the blockchain</button>
+          </>
+        )}
+
+        {presenting && !bothSigned && toSign.length === 0 && (
+          <div className="row">
+            {!sigs.reviewer && <button onClick={() => setPersona('lawyer')}>Switch to {PERSONA_LABEL.lawyer.icon} Lawyer ▸</button>}
+            {sigs.reviewer && !sigs.client && <button onClick={() => setPersona('client')}>Switch to {PERSONA_LABEL.client.icon} Client ▸</button>}
           </div>
-          <div className="small">
-            Checked by: Chainlink CRE{' '}
-            {same(r.verifier.forwarder, SEPOLIA_MOCK_FORWARDER) ? <Badge tone="warn">Simulation</Badge> : <Badge tone="ok">Production</Badge>}
-          </div>
-          {document ? (
-            <details>
-              <summary>The full agreement being signed</summary>
-              <pre style={{ whiteSpace: 'pre-wrap' }}>{document.text}</pre>
-            </details>
-          ) : isParty && !storedAccess(account) ? (
-            <div>
-              <button className="ghost small" disabled={!!busy} onClick={() => run('Unlocking the agreement', async () => { await unlockAccess(); await load() })}>
-                🔒 Show the full agreement
-              </button>
-              <div className="muted small">Private to the parties. Your wallet signs a read pass (no transaction, valid for 24 hours).</div>
-            </div>
-          ) : isParty ? (
-            <p className="error small">The full agreement could not be loaded or does not match its fingerprint.</p>
-          ) : (
-            <p className="muted small">🔒 The full agreement is private to the parties. Connect the wallet named below to read it.</p>
-          )}
-          <div className="small muted">
-            Agreement fingerprint {r.agreementHash.slice(0, 18)}… · terms fingerprint {r.termsHash.slice(0, 18)}…
-          </div>
-        </section>
+        )}
 
-        <section className="panel stack">
-          <h2 style={{ margin: 0 }}>Who signs</h2>
-          <table>
-            <tbody>
-              {party(oneSigner ? 'Lawyer & client' : 'Lawyer (reviewer)', 'reviewer', r.reviewer)}
-              {!oneSigner && party('Client', 'client', r.client)}
-              {party('Developer', null, r.developer)}
-              {party('Freelancer', null, r.freelancer)}
-            </tbody>
-          </table>
-
-          {!account ? (
-            <button onClick={() => run('Connecting', async () => setAccount((await connectWallet()).account))} disabled={!!busy}>Connect wallet</button>
-          ) : toSign.length > 0 && !expired && !pending.agreementId ? (
-            <>
-              {toSign.map((role) => <p key={role} className="small" style={{ margin: 0 }}>{WHAT_YOU_SIGN[role]}</p>)}
-              <button onClick={sign} disabled={!!busy}>Sign as {toSign.map((x) => (x === 'reviewer' ? 'lawyer' : 'client')).join(' and ')}</button>
-            </>
-          ) : myRoles.length === 0 && !bothSigned ? (
-            <p className="small muted">This wallet ({shortAddr(account)}) is not asked to sign. Switch account in MetaMask if you are the lawyer or the client.</p>
-          ) : null}
-
-          {bothSigned && !pending.agreementId && (
-            <>
-              <p className="small" style={{ margin: 0 }}>Both have signed. Anyone can now put it on the blockchain.</p>
-              <button onClick={register} disabled={!!busy || expired}>Register on the blockchain</button>
-            </>
-          )}
-
-          {presenting && !bothSigned && toSign.length === 0 && (
+        {!bothSigned && (
+          <div className="stack" style={{ marginTop: 4 }}>
+            <label>Share this link with whoever still needs to sign</label>
             <div className="row">
-              {!sigs.reviewer && <button onClick={() => setPersona('lawyer')}>Switch to {PERSONA_LABEL.lawyer.icon} Lawyer ▸</button>}
-              {sigs.reviewer && !sigs.client && <button onClick={() => setPersona('client')}>Switch to {PERSONA_LABEL.client.icon} Client ▸</button>}
+              <input className="mono small" readOnly value={link} onFocus={(e) => e.target.select()} />
+              <button className="ghost small" onClick={() => navigator.clipboard.writeText(link).then(() => setCopied(true))}>
+                {copied ? 'Copied' : 'Copy'}
+              </button>
             </div>
-          )}
+          </div>
+        )}
+      </section>
 
-          {!bothSigned && (
-            <div className="stack">
-              <label>Share this link with whoever still needs to sign</label>
-              <div className="row">
-                <input className="mono small" readOnly value={link} onFocus={(e) => e.target.select()} />
-                <button className="ghost small" onClick={() => navigator.clipboard.writeText(link).then(() => setCopied(true))}>
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
+      <section className="panel stack">
+        <h2 style={{ margin: 0 }}>What is being signed</h2>
+        {terms ? (
+          <>
+            <ul style={{ margin: 0 }}>
+              <li>{terms.parties.client.name} pays <b>{terms.payment.amount} {terms.payment.tokenSymbol}</b> into the escrow</li>
+              <li>{terms.parties.freelancer.name} delivers within <b>{terms.deadlines.deliveryPeriodDays} days</b></li>
+              <li>Client review period: <b>{terms.deadlines.reviewPeriodDays} days</b></li>
+              <li>Refund if the deadline is missed: <b>{terms.refund.onMissedDeadline ? 'yes' : 'no'}</b></li>
+              <li>Special powers anyone may have: <b>{terms.adminPowers.length ? terms.adminPowers.map((p) => p.category).join(', ') : 'none'}</b></li>
+            </ul>
+            <details>
+              <summary>Where each term comes from</summary>
+              <ul className="small">{terms.sourceClauses.map((c, i) => <li key={i}>“{c.quote}”</li>)}</ul>
+            </details>
+          </>
+        ) : (
+          <p className="error small">The terms could not be loaded or do not match their fingerprint.</p>
+        )}
+        <div className="small">
+          Also in this agreement, without signing now: developer <span className="mono">{shortAddr(r.developer)}</span>
+          {same(r.developer, r.freelancer) ? ' (also gets paid)' : <>, payee <span className="mono">{shortAddr(r.freelancer)}</span></>}
+        </div>
+        <div className="small">
+          Smart contract that will hold the money:{' '}
+          {same(r.target, zeroAddress) ? (
+            <span className="muted">the developer builds and proposes it after you both sign; the client approves it before any money goes in.</span>
+          ) : (
+            <a className="mono" href={`${EXPLORER}/address/${r.target}#code`} target="_blank" rel="noreferrer">{shortAddr(r.target)}</a>
           )}
-        </section>
-      </div>
+        </div>
+        <div className="small">
+          Checked by: Chainlink CRE{' '}
+          {same(r.verifier.forwarder, SEPOLIA_MOCK_FORWARDER) ? <Badge tone="warn">Simulation</Badge> : <Badge tone="ok">Production</Badge>}
+        </div>
+        {document ? (
+          <details>
+            <summary>The full agreement being signed</summary>
+            <pre style={{ whiteSpace: 'pre-wrap' }}>{document.text}</pre>
+          </details>
+        ) : isParty && !storedAccess(account) ? (
+          <div>
+            <button className="ghost small" disabled={!!busy} onClick={() => run('Unlocking the agreement', async () => { await unlockAccess(); await load() })}>
+              🔒 Show the full agreement
+            </button>
+            <div className="muted small">Private to the parties. Your wallet signs a read pass (no transaction, valid for 24 hours).</div>
+          </div>
+        ) : isParty ? (
+          <p className="error small">The full agreement could not be loaded or does not match its fingerprint.</p>
+        ) : (
+          <p className="muted small">🔒 The full agreement is private to the parties. Connect the lawyer&apos;s or the client&apos;s wallet to read it.</p>
+        )}
+        <div className="small muted">
+          Agreement fingerprint {r.agreementHash.slice(0, 18)}… · terms fingerprint {r.termsHash.slice(0, 18)}…
+        </div>
+      </section>
     </>
   )
 }

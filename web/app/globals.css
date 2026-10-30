@@ -246,6 +246,7 @@ pre { background: var(--subtle); border: 1px solid var(--line); padding: 12px; b
 .progress { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
 .stepper-wrap { overflow-x: auto; }
 .stepper { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(96px, 1fr)); min-width: 680px; }
+.stepper.three { grid-template-columns: repeat(3, minmax(120px, 1fr)); min-width: 380px; }
 .stepper li { display: flex; flex-direction: column; gap: 10px; font-size: 13px; color: var(--muted); }
 .stepper .track { display: flex; align-items: center; }
 .stepper .dot {
@@ -262,6 +263,8 @@ pre { background: var(--subtle); border: 1px solid var(--line); padding: 12px; b
 /* --- "What happens now" ----------------------------------------------------- */
 .next { border-radius: var(--radius-control); background: var(--accent-soft); padding: 14px 16px; display: grid; gap: 8px; }
 .next.done { background: var(--ok-bg); }
+.next.card { padding: 18px 20px; margin-bottom: 20px; border: 2px solid var(--accent); border-radius: var(--radius); gap: 10px; }
+.next.card.done { border-color: var(--ok); }
 .next h2 { margin: 0; font-size: 20px; }
 .next .who { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
 .next.done .who { color: var(--ok); }
@@ -280,6 +283,28 @@ pre { background: var(--subtle); border: 1px solid var(--line); padding: 12px; b
 /* --- Selectable option cards (contract picker) ------------------------------- */
 button.option { min-height: 0; padding: 12px 14px; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 2px; text-align: left; }
 button.option[aria-pressed='true'] { border: 2px solid var(--accent); background: var(--accent-soft); padding: 11px 13px; }
+
+/* --- Extracted terms (/new) ------------------------------------------------------ */
+.terms-form { display: flex; flex-direction: column; }
+.terms-row { display: grid; grid-template-columns: 190px minmax(0, 1fr) minmax(0, 1.3fr); gap: 8px 16px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.terms-row.head { border-top: 0; padding-top: 0; font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.terms-row .term-label { font-weight: 500; }
+.terms-row blockquote { margin: 0; font-family: var(--font-serif), Georgia, serif; font-size: 15px; line-height: 1.45; }
+.terms-row blockquote.muted { font-family: inherit; font-size: 13px; }
+@media (max-width: 760px) {
+  .terms-row { grid-template-columns: 1fr; }
+  .terms-row.head { display: none; }
+}
+
+/* --- Tabs ------------------------------------------------------------------- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 8px 0 24px; overflow-x: auto; scroll-margin-top: 80px; }
+.tabs button {
+  min-height: 44px; padding: 0 16px; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  background: transparent; color: var(--muted); font-weight: 500; margin-bottom: -1px;
+}
+.tabs button:hover { color: var(--ink); filter: none; }
+.tabs button[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs .count { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--bad-bg); color: var(--bad); font-size: 12px; line-height: 20px; }
 
 /* --- Filters ---------------------------------------------------------------- */
 .filters { display: flex; flex-wrap: wrap; gap: 8px; }
