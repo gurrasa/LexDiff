@@ -4,10 +4,10 @@
   "registry": "0x38409d09225d4dec903e99623a4abc17e5563c71",
   "logic": "0x281c27308eb6fca49e0c4cbca1f10ce0f660be17",
   "usdc": "0x524b1cd9efc10ecdc5803eb807b194f2c6ed842f",
-  "escrowV1": "0xd6ca4876c030e5d97376aa3e7c86f1fb952a3fb1",
-  "escrowV2": "0xe7d57a9beaa1bea15fd7b28dfa43210667d79db6",
-  "websiteEscrow": "0x88402d59ac07e46fa01ad125ef6ef7dea910e369",
+  "escrowV1": "0x75b856249ee6bf055914156114041497d75a6448",
+  "escrowV2": "0x7fea53530ad81ce56f380d8ce5d3560161524861",
+  "websiteEscrow": "0x4fe875ef46c6e25674634c28daf5e0fe77837c13",
   "developer": "0x04b986349d0aDC3123eE9df037409106D134c198",
-  "client": "0xf4F5b2AeA6755bBcAd0b32b57E189d0eF3F16BCC",
+  "client": "0x7a17F989e130d11795e3569C84F607eB466C03ab",
   "freelancer": "0x04b986349d0aDC3123eE9df037409106D134c198"
 }

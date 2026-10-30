@@ -1,5 +1,6 @@
 import { createPublicClient, createWalletClient, custom, decodeEventLog, http, keccak256, toBytes, type Address, type Hex } from 'viem'
 import { sepolia } from 'viem/chains'
+import { activePersona, IDENTITY_EVENT, personaAct, personaAddress } from './identity'
 import { registryAbi } from './registry-abi'
 import { canonicalize } from './terms'
 
@@ -260,27 +261,67 @@ type Eip1193 = {
 
 const injected = () => (globalThis as { ethereum?: Eip1193 }).ethereum
 
-/** Currently connected account without prompting, plus updates when the user switches account in MetaMask. */
+/**
+ * The account the app acts as, without prompting: the presentation-mode persona when one is selected,
+ * otherwise the connected MetaMask account. Calls back again on persona switches and MetaMask account changes.
+ */
 export function watchAccount(onChange: (account: Address | null) => void): () => void {
   const ethereum = injected()
-  if (!ethereum) return () => {}
-  const handler = (accounts: string[]) => onChange((accounts[0] as Address) ?? null)
-  ethereum.request({ method: 'eth_accounts' }).then((a) => handler(a as string[])).catch(() => {})
-  ethereum.on?.('accountsChanged', handler)
-  return () => ethereum.removeListener?.('accountsChanged', handler)
+  const refresh = async () => {
+    const persona = await personaAddress()
+    if (persona || activePersona()) return onChange(persona)
+    if (!ethereum) return onChange(null)
+    const accounts = (await ethereum.request({ method: 'eth_accounts' }).catch(() => [])) as string[]
+    onChange((accounts[0] as Address) ?? null)
+  }
+  const onAccounts = () => void refresh()
+  void refresh()
+  window.addEventListener(IDENTITY_EVENT, onAccounts)
+  ethereum?.on?.('accountsChanged', onAccounts)
+  return () => {
+    window.removeEventListener(IDENTITY_EVENT, onAccounts)
+    ethereum?.removeListener?.('accountsChanged', onAccounts)
+  }
 }
 
-export async function connectWallet() {
+/** Anything that can sign LexDiff's typed data: MetaMask, or a presentation-mode persona on the server. */
+export type Signer = {
+  signTypedData: (args: {
+    account: Address
+    domain: Record<string, unknown>
+    types: Record<string, unknown>
+    primaryType: string
+    message: Record<string, unknown>
+  }) => Promise<Hex>
+}
+
+export async function connectWallet(): Promise<{ wallet: Signer; account: Address }> {
+  const persona = await personaAddress()
+  if (persona) {
+    const wallet: Signer = {
+      signTypedData: async ({ account: _account, ...typedData }) =>
+        (await personaAct<{ signature: Hex }>({ kind: 'sign', typedData })).signature,
+    }
+    return { wallet, account: persona }
+  }
   const ethereum = injected()
   if (!ethereum) throw new Error('No injected wallet found. Install MetaMask or a compatible wallet.')
   const wallet = createWalletClient({ chain: sepolia, transport: custom(ethereum) })
   const [account] = await wallet.requestAddresses()
   if ((await wallet.getChainId()) !== sepolia.id) await wallet.switchChain({ id: sepolia.id })
-  return { wallet, account }
+  return { wallet: wallet as unknown as Signer, account }
 }
 
 export async function writeRegistry(functionName: string, args: readonly unknown[]) {
-  const { wallet, account } = await connectWallet()
+  if (activePersona()) {
+    const { hash } = await personaAct<{ hash: Hex }>({ kind: 'write', functionName, args })
+    return publicClient.waitForTransactionReceipt({ hash })
+  }
+  const ethereum = injected()
+  if (!ethereum) throw new Error('No injected wallet found. Install MetaMask or a compatible wallet.')
+  const wallet = createWalletClient({ chain: sepolia, transport: custom(ethereum) })
+  const [account] = await wallet.requestAddresses()
+  if ((await wallet.getChainId()) !== sepolia.id) await wallet.switchChain({ id: sepolia.id })
   const hash = await wallet.writeContract({
     account,
     chain: sepolia,

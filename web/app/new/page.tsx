@@ -184,6 +184,16 @@ export default function NewAgreement() {
           <button className="ghost" onClick={() => run('Loading', async () => setText(await (await fetch('/demo/freelance-escrow.md')).text()))} disabled={!!busy}>
             Use the demo agreement
           </button>
+          {text && (
+            <button
+              className="ghost small"
+              title="Skip the AI wait during a presentation: load terms a lawyer already reviewed"
+              onClick={() => run('Loading prepared terms', async () => setTermsJson(await (await fetch('/demo/freelance-escrow.terms.json')).text()))}
+              disabled={!!busy}
+            >
+              Use prepared terms (skip Claude)
+            </button>
+          )}
         </div>
       </section>
 

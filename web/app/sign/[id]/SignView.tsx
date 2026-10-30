@@ -19,6 +19,7 @@ import {
   submitSigned,
   watchAccount,
 } from '@/lib/registry'
+import { PERSONA_LABEL, personas, setPersona } from '@/lib/identity'
 import type { EscrowTerms } from '@/lib/terms'
 
 type Role = 'client' | 'reviewer'
@@ -38,6 +39,7 @@ export default function SignView() {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [presenting, setPresenting] = useState(false)
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/registrations/${id}`)
@@ -51,6 +53,7 @@ export default function SignView() {
 
   useEffect(() => {
     load().catch((e) => setError(String(e.message ?? e)))
+    personas().then((p) => setPresenting(!!p))
     return watchAccount(setAccount)
   }, [load])
 
@@ -203,6 +206,13 @@ export default function SignView() {
               <p className="small" style={{ margin: 0 }}>Both have signed. Anyone can now put it on the blockchain.</p>
               <button onClick={register} disabled={!!busy || expired}>Register on the blockchain</button>
             </>
+          )}
+
+          {presenting && !bothSigned && toSign.length === 0 && (
+            <div className="row">
+              {!sigs.reviewer && <button onClick={() => setPersona('lawyer')}>Switch to {PERSONA_LABEL.lawyer.icon} Lawyer ▸</button>}
+              {sigs.reviewer && !sigs.client && <button onClick={() => setPersona('client')}>Switch to {PERSONA_LABEL.client.icon} Client ▸</button>}
+            </div>
           )}
 
           {!bothSigned && (

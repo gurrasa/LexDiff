@@ -41,6 +41,7 @@ import {
   ZERO_BYTES32,
 } from '@/lib/registry'
 import ContractPicker from '@/components/ContractPicker'
+import { type Persona, PERSONA_LABEL, personas, setPersona } from '@/lib/identity'
 import type { EscrowTerms } from '@/lib/terms'
 
 type Details = { clause: string; expected: string; actual: string; level?: Level; method?: string }
@@ -85,6 +86,7 @@ export default function AgreementView() {
   const [newTarget, setNewTarget] = useState('')
   const [showEvidence, setShowEvidence] = useState(false)
   const [log, setLog] = useState('')
+  const [presenting, setPresenting] = useState(false)
 
   const load = useCallback(async () => {
     const [agreement, findings, checks, history, chainEvents] = await Promise.all([
@@ -121,6 +123,10 @@ export default function AgreementView() {
     )
     setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText, chainEvents, document })
   }, [id])
+
+  useEffect(() => {
+    personas().then((p) => setPresenting(!!p))
+  }, [])
 
   // Follow MetaMask: switching account switches role, so each person sees only their own actions.
   useEffect(
@@ -289,6 +295,18 @@ export default function AgreementView() {
       .map((f) => ({ t: f.fixVerifiedAt, text: `Chainlink verified the fix: ${clauseOf(f)} now passes.` })),
   ].sort((x, y) => Number(x.t - y.t))
 
+  // In presentation mode, the next step's role is one click away.
+  const ROLE_PERSONA: Partial<Record<Role, Persona>> = { reviewer: 'lawyer', client: 'client', developer: 'developer' }
+  const switchTo = (r: Role) => {
+    const p = ROLE_PERSONA[r]
+    if (!presenting || !p || role === r) return null
+    return (
+      <button onClick={() => setPersona(p)}>
+        Switch to {PERSONA_LABEL[p].icon} {PERSONA_LABEL[p].label} ▸
+      </button>
+    )
+  }
+
   const nextAction = () => {
     if (stage.waitingFor === 'chainlink') {
       return (
@@ -344,7 +362,16 @@ export default function AgreementView() {
       )
     }
     if (stage.waitingFor === 'reviewer') {
-      return <a href="#issues" className="button ghost">Go to the issues ↓</a>
+      return (
+        <div className="row">
+          {role !== 'reviewer' && role !== 'client' && switchTo('reviewer')}
+          {role === 'reviewer' && switchTo('client')}
+          <a href="#issues" className="button ghost">Go to the issues ↓</a>
+        </div>
+      )
+    }
+    if (stage.waitingFor && stage.waitingFor !== role && presenting) {
+      return switchTo(stage.waitingFor as Role)
     }
     if (stage.waitingFor && stage.waitingFor !== role) {
       return <p className="small">Connect the {ROLES[stage.waitingFor as Role].label.toLowerCase()}&apos;s wallet to continue.</p>

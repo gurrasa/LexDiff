@@ -51,9 +51,14 @@ export const KIND_PLAIN = [
 
 export const isFailing = (f: Finding) => f.verification === Verification.Fail || f.verification === Verification.Inconclusive
 
-/** A failing property nobody has decided on yet. */
+/**
+ * A failing property that still needs a decision: nobody decided yet, or someone disputed it and no fix is
+ * underway. A dispute blocks the process until the lawyer requires a fix or the client accepts the risk.
+ */
 const undecided = (f: Finding) =>
-  isFailing(f) && f.remediation === Remediation.None && f.disposition === Disposition.Undecided
+  isFailing(f) &&
+  f.remediation === Remediation.None &&
+  (f.disposition === Disposition.Undecided || f.disposition === Disposition.Disputed)
 
 export const STEPS = ['Agreement signed', 'Code checked', 'Decisions', 'Fix', 'Re-check', 'Decided'] as const
 
@@ -104,7 +109,7 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
     return {
       step: 2,
       title: `${toDecide} failing propert${toDecide > 1 ? 'ies need' : 'y needs'} a decision`,
-      detail: 'For each one, the reviewer can require a fix, or the client can knowingly accept the risk. Accepting does not make it pass. Every decision is signed.',
+      detail: 'For each one, the lawyer can require a fix, or the client can knowingly accept the risk. A disputed property needs one of those decisions too. Accepting does not make it pass. Every decision is signed.',
       waitingFor: 'reviewer',
     }
   }

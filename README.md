@@ -217,9 +217,16 @@ The app needs a persistent disk for its evidence store and signing requests.
    - `ENABLE_LOCAL_CRE=false`
    - `RELAYER_PRIVATE_KEY`: a funded Sepolia key. It submits already-signed registrations and decisions, so lawyers and clients need no ETH; the signature still decides who acted.
    - `ETHERSCAN_API_KEY`: lets the contract picker show whether a contract is verified.
+   - `DEMO_LAWYER_KEY`, `DEMO_CLIENT_KEY`, `DEMO_DEVELOPER_KEY`: optional; turn on presentation mode (testnet keys only).
 5. **Settings → Networking → Generate domain**, put it in `PUBLIC_BASE_URL`, and redeploy.
 
 The CRE workflow still runs from a laptop. Point it at the hosted store by setting `evidenceStoreUrl` in `cre/lexdiff-workflow/config.staging.json` to `https://<your-domain>/api/evidence`. Claude extraction is rate-limited per visitor (10 per hour).
+
+### Presentation mode (one person plays every role)
+
+When `DEMO_LAWYER_KEY`, `DEMO_CLIENT_KEY` and `DEMO_DEVELOPER_KEY` are set on the web service, the header shows **Presenting as ⚖️ Lawyer · 🏢 Client · 👩‍💻 Developer · 🦊 My wallet**. One click switches identity: every page then shows that party's view, and its actions are signed and sent by the server with that identity's testnet key. No MetaMask, no account switching. When it is another party's turn, the *Next* box offers **Switch to … ▸**.
+
+The demo escrows are deployed with the demo client as client and the developer as payee, so *Fill in the demo for me* sets every role correctly. The keys can only sign LexDiff registrations and decisions for this registry, and only call this registry. **🦊 My wallet** keeps the real MetaMask flow.
 
 ### Automatic checks (the CRE worker)
 
