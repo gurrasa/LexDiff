@@ -23,7 +23,8 @@ const REASONS: Record<string, string> = {
   CannotSupersede: 'This agreement cannot be amended by these parties.',
   UnknownAgreement: 'Unknown agreement.',
   UnknownFinding: 'Unknown finding.',
-  ZeroAddress: 'Every party and the contract need an address.',
+  ZeroAddress: 'Every party needs a wallet address.',
+  NoContractYet: 'No contract has been approved yet: the developer proposes it and the client approves it first.',
 }
 type Relayable = (typeof RELAYABLE)[number]
 

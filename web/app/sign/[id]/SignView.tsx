@@ -3,12 +3,13 @@
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
-import type { Address } from 'viem'
+import { type Address, type Hex, zeroAddress } from 'viem'
 import {
   type AgreementDocument,
   connectWallet,
   DOMAIN,
   EXPLORER,
+  autoUnlock,
   getEvidence,
   type PendingRegistration,
   REGISTRATION_TYPES,
@@ -16,7 +17,9 @@ import {
   same,
   SEPOLIA_MOCK_FORWARDER,
   shortAddr,
+  storedAccess,
   submitSigned,
+  unlockAccess,
   watchAccount,
 } from '@/lib/registry'
 import { PERSONA_LABEL, personas, setPersona } from '@/lib/identity'
@@ -48,14 +51,19 @@ export default function SignView() {
     const p = { ...body, registration: registrationFromJson(body.registration) } as PendingRegistration
     setPending(p)
     setTerms(await getEvidence<EscrowTerms>(p.registration.termsHash, p.registration.termsURI))
-    setDocument(await getEvidence<AgreementDocument>(p.registration.agreementHash))
-  }, [id])
+    // The full agreement is private to the parties: it loads once the reader has a read pass.
+    await autoUnlock(account)
+    setDocument(await getEvidence<AgreementDocument>(p.registration.agreementHash, undefined, { registrationId: id as Hex, account }))
+  }, [id, account])
 
   useEffect(() => {
     load().catch((e) => setError(String(e.message ?? e)))
+  }, [load])
+
+  useEffect(() => {
     personas().then((p) => setPresenting(!!p))
     return watchAccount(setAccount)
-  }, [load])
+  }, [])
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label)
@@ -78,6 +86,7 @@ export default function SignView() {
   const oneSigner = same(r.client, r.reviewer)
   const myRoles = (['reviewer', 'client'] as Role[]).filter((role) => account && same(account, r[role]))
   const toSign = myRoles.filter((role) => !sigs[role])
+  const isParty = !!account && [r.client, r.reviewer, r.developer, r.freelancer].some((x) => same(x, account))
   const bothSigned = !!sigs.client && !!sigs.reviewer
   const expired = Date.now() / 1000 > Number(r.deadline)
   const link = typeof window === 'undefined' ? '' : window.location.href
@@ -160,7 +169,11 @@ export default function SignView() {
           )}
           <div className="small">
             Smart contract that will hold the money:{' '}
-            <a className="mono" href={`${EXPLORER}/address/${r.target}#code`} target="_blank" rel="noreferrer">{shortAddr(r.target)}</a>
+            {same(r.target, zeroAddress) ? (
+              <span className="muted">the developer builds and proposes it after you both sign; the client approves it before any money goes in.</span>
+            ) : (
+              <a className="mono" href={`${EXPLORER}/address/${r.target}#code`} target="_blank" rel="noreferrer">{shortAddr(r.target)}</a>
+            )}
           </div>
           <div className="small">
             Checked by: Chainlink CRE{' '}
@@ -171,8 +184,17 @@ export default function SignView() {
               <summary>The full agreement being signed</summary>
               <pre style={{ whiteSpace: 'pre-wrap' }}>{document.text}</pre>
             </details>
-          ) : (
+          ) : isParty && !storedAccess(account) ? (
+            <div>
+              <button className="ghost small" disabled={!!busy} onClick={() => run('Unlocking the agreement', async () => { await unlockAccess(); await load() })}>
+                🔒 Show the full agreement
+              </button>
+              <div className="muted small">Private to the parties. Your wallet signs a read pass (no transaction, valid for 24 hours).</div>
+            </div>
+          ) : isParty ? (
             <p className="error small">The full agreement could not be loaded or does not match its fingerprint.</p>
+          ) : (
+            <p className="muted small">🔒 The full agreement is private to the parties. Connect the wallet named below to read it.</p>
           )}
           <div className="small muted">
             Agreement fingerprint {r.agreementHash.slice(0, 18)}… · terms fingerprint {r.termsHash.slice(0, 18)}…

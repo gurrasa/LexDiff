@@ -7,3 +7,4 @@ contracts/broadcast
 *.wasm
 .DS_Store
 .cre_build_tmp.js
+demo-video/

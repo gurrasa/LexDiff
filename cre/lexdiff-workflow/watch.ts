@@ -6,7 +6,7 @@
 // trigger listens to the same event.
 //
 //   cd cre/lexdiff-workflow && node watch.ts            (watch from now on)
-//   node watch.ts --from 12019746                         (also process older requests)
+//   node watch.ts --from 12026189                         (also process older requests)
 //   node watch.ts --dry-run                               (log what would run, send nothing)
 
 import { spawn } from 'node:child_process'

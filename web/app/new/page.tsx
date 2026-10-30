@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { isAddress, isHex, type Address, type Hex } from 'viem'
+import { isAddress, isHex, type Address, type Hex, zeroAddress } from 'viem'
 import {
   connectWallet,
   putEvidence,
@@ -24,8 +24,6 @@ export default function NewAgreement() {
   const [roles, setRoles] = useState({ client: '', freelancer: '', reviewer: '', developer: '', target: '' })
   const [verifier, setVerifier] = useState({ forwarder: SEPOLIA_MOCK_FORWARDER as string, workflowOwner: '', workflowId: '' })
   const [supersedes, setSupersedes] = useState('')
-  const [demoV1, setDemoV1] = useState<string | null>(null)
-  const [demoWebsite, setDemoWebsite] = useState<string | null>(null)
   const [demoParties, setDemoParties] = useState<{ client?: string; freelancer?: string; developer?: string }>({})
   // Usually one person builds the work and gets paid; a separate payee is the exception.
   const [payeeIsDeveloper, setPayeeIsDeveloper] = useState(true)
@@ -36,8 +34,6 @@ export default function NewAgreement() {
     fetch('/api/demo')
       .then((r) => r.json())
       .then((d) => {
-        setDemoV1(d.escrowV1)
-        setDemoWebsite(d.websiteEscrow)
         setDemoParties({ client: d.client ?? undefined, freelancer: d.freelancer ?? undefined, developer: d.developer ?? undefined })
       })
       .catch(() => {})
@@ -70,19 +66,19 @@ export default function NewAgreement() {
   const extract = () => run('Claude is reading the agreement (10–30 seconds)', () => extractFrom(text))
 
   /** `name` is a file stem in public/demo: <name>.md (agreement) and <name>.terms.json (reviewed fallback). */
-  const fillDemo = (name: string, target: string | null) =>
+  const fillDemo = (name: string) =>
     run('Setting up the demo', async () => {
       const demo = await (await fetch(`/demo/${name}.md`)).text()
       setText(demo)
-      // You fill this in as the lawyer. Client, freelancer and developer are the parties the demo escrow was
-      // deployed with, so each of them can act from their own wallet.
+      // You fill this in as the lawyer. Client, freelancer and developer are the parties the demo escrows were
+      // deployed with, so each of them can act from their own wallet. The contract comes later, from the developer.
       const { account } = await connectWallet()
       setRoles({
         client: demoParties.client ?? account,
         freelancer: demoParties.freelancer ?? demoParties.developer ?? account,
         reviewer: account,
         developer: demoParties.developer ?? account,
-        target: target ?? '',
+        target: '',
       })
       setBusy('Claude is reading the agreement (10–30 seconds)')
       try {
@@ -95,7 +91,10 @@ export default function NewAgreement() {
 
   const publish = () =>
     run('Saving the approved terms', async () => {
-      for (const [k, v] of Object.entries(roles)) if (!isAddress(v)) throw new Error(`The ${k} needs a valid wallet address.`)
+      for (const [k, v] of Object.entries(roles)) {
+        if (k !== 'target' && !isAddress(v)) throw new Error(`The ${k} needs a valid wallet address.`)
+      }
+      if (roles.target && !isAddress(roles.target)) throw new Error('The existing contract needs a valid address, or leave it empty.')
       if (!isAddress(verifier.forwarder)) throw new Error('The forwarder must be an address.')
       if (verifier.workflowOwner && !isAddress(verifier.workflowOwner)) throw new Error('The workflow owner must be an address.')
       if (verifier.workflowId && !(isHex(verifier.workflowId) && verifier.workflowId.length === 66)) {
@@ -118,7 +117,8 @@ export default function NewAgreement() {
         reviewer: roles.reviewer as Address,
         developer: roles.developer as Address,
         freelancer: (payeeIsDeveloper ? roles.developer : roles.freelancer) as Address,
-        target: roles.target as Address,
+        // Usually empty: the developer proposes the contract after both have signed.
+        target: (roles.target || zeroAddress) as Address,
         agreementHash: document.hash,
         termsHash: published.hash,
         termsURI: published.uri,
@@ -166,8 +166,8 @@ export default function NewAgreement() {
           </p>
         </div>
         <div className="stack" style={{ textAlign: 'right' }}>
-          <button onClick={() => fillDemo('freelance-escrow', demoV1)} disabled={!!busy}>Fill in the demo for me</button>
-          <button className="ghost small" onClick={() => fillDemo('website-redesign', demoWebsite)} disabled={!!busy}>
+          <button onClick={() => fillDemo('freelance-escrow')} disabled={!!busy}>Fill in the demo for me</button>
+          <button className="ghost small" onClick={() => fillDemo('website-redesign')} disabled={!!busy}>
             Second demo: website redesign
           </button>
         </div>
@@ -267,12 +267,16 @@ export default function NewAgreement() {
           </div>
         </div>
         <p className="small muted" style={{ margin: 0 }}>
-          The client and payee must be the same addresses the contract was deployed with; Chainlink checks that too.
+          <b>The smart contract comes later.</b> Once the lawyer and the client have signed, the developer deploys the escrow
+          contract with these client and payee wallets and proposes it on the agreement page. The client approves it, and that
+          starts the Chainlink check.
         </p>
-        <div>
-          <label>Which smart contract should be compared with the agreement?</label>
+        <details>
+          <summary>The contract already exists (optional)</summary>
+          <p className="small muted">Name it here and it is part of what both of you sign, and checked as soon as the agreement is registered.</p>
           <ContractPicker value={roles.target} onChange={(v) => setRoles({ ...roles, target: v })} />
-        </div>
+          {roles.target && <button className="ghost small" onClick={() => setRoles({ ...roles, target: '' })}>Leave it to the developer</button>}
+        </details>
         <details>
           <summary>Advanced: verifier and amendments</summary>
           <div className="grid two" style={{ marginTop: '0.5rem' }}>

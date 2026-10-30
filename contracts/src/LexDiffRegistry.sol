@@ -47,14 +47,17 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
     // ---------------------------------------------------------------------
 
     /// @notice Register reviewed terms. Requires the client's and the reviewer's signatures over the
-    ///         terms hash, the roles, the enforcing contract and the verifier. Anyone may relay.
+    ///         terms hash, the roles and the verifier. Anyone may relay.
+    /// @dev    `target` is usually zero: the parties agree first, then the developer builds and proposes the
+    ///         contract and the client approves it, which starts the first check. A contract that already
+    ///         exists can be named here instead, and is then checked straight away.
     function registerAgreement(Registration calldata r, bytes calldata clientSig, bytes calldata reviewerSig)
         external
         returns (uint256 agreementId)
     {
         if (
             r.client == address(0) || r.reviewer == address(0) || r.developer == address(0)
-                || r.freelancer == address(0) || r.target == address(0) || r.verifier.forwarder == address(0)
+                || r.freelancer == address(0) || r.verifier.forwarder == address(0)
         ) revert ZeroAddress();
         if (block.timestamp > r.deadline) revert SignatureExpired();
 
@@ -87,10 +90,12 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
         a.verifier = r.verifier;
         a.supersedes = r.supersedes;
         a.createdAt = uint64(block.timestamp);
-        _ledgers[agreementId].history.push(r.target);
 
         emit AgreementRegistered(agreementId, r.client, r.reviewer, r.developer, r.termsHash, r.supersedes);
-        emit CheckRequested(agreementId, r.target, r.termsHash);
+        if (r.target != address(0)) {
+            _ledgers[agreementId].history.push(r.target);
+            emit CheckRequested(agreementId, r.target, r.termsHash);
+        }
     }
 
     function registrationDigest(Registration calldata r) public view returns (bytes32) {
@@ -117,7 +122,8 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
     }
 
     // ---------------------------------------------------------------------
-    // Redeployment: the developer or reviewer proposes, the client (who will fund it) approves.
+    // The enforcing contract: the developer (or reviewer) proposes it, the client (who will fund it) approves.
+    // The same path sets the first contract and replaces it with a corrected one.
     // Approval does not move funds; the CRE report's balance reads evidence where the money actually is.
     // ---------------------------------------------------------------------
 
@@ -148,6 +154,7 @@ contract LexDiffRegistry is ILexDiff, IReceiver, EIP712 {
         if (msg.sender != a.client && msg.sender != a.reviewer && msg.sender != a.developer && msg.sender != a.freelancer) {
             revert NotAParty(msg.sender);
         }
+        if (a.target == address(0)) revert NoContractYet();
         emit CheckRequested(agreementId, a.target, a.termsHash);
     }
 

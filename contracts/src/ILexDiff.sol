@@ -176,6 +176,7 @@ interface ILexDiff {
     error RegistrationReplayed();
     error CannotSupersede(uint256 agreementId);
     error NoPendingContract(address proposed);
+    error NoContractYet();
     error NotForwarder(address sender, address expected);
     error WrongWorkflow();
     error StaleTarget(address reported, address current);

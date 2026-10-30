@@ -184,8 +184,8 @@ export type AgreementDocument = { schema: 'lexdiff/agreement-document@1'; text: 
 
 /** How a finding was established (F06). */
 export const LEVEL_PLAIN: Record<Level, { icon: string; label: string }> = {
-  value: { icon: '🔢', label: 'Read from the contract on Sepolia' },
-  structural: { icon: '📄', label: 'From the verified source code (not executed)' },
+  value: { icon: '🔢', label: 'Verified: read from the live contract on Sepolia' },
+  structural: { icon: '📄', label: 'Structural only: the source code has the right shape, but it was not run' },
 }
 
 const read = <T>(functionName: string, args: readonly unknown[] = []) =>
@@ -200,7 +200,7 @@ export const registry = {
   getDecisions: (id: bigint, key: Hex) => read<Decision[]>('getDecisions', [id, key]),
   nonces: (signer: Address) => read<bigint>('nonces', [signer]),
   getEvents: async (id: bigint): Promise<AgreementEvent[]> => {
-    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK?.trim() || '12019746')
+    const fromBlock = BigInt(process.env.NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK?.trim() || '12026189')
     const logs = await publicClient.getContractEvents({
       address: REGISTRY_ADDRESS,
       abi: registryAbi,
@@ -233,22 +233,82 @@ export async function putEvidence(value: unknown): Promise<{ hash: Hex; uri: str
   return body
 }
 
+/** Which agreement (or signing request) a private document belongs to, and who is asking for it. */
+export type EvidenceScope = { agreementId?: bigint; registrationId?: Hex; account?: Address | null }
+
 /**
- * Fetches evidence and checks it against the hash. Returns null when unavailable or tampered.
- * Tries this app's own store first, then `uri` (e.g. a termsURI recorded as http://localhost:3000/…,
- * which only works on the machine that registered it). The hash check makes the source irrelevant.
+ * Fetches evidence and checks it against the hash. Returns null when unavailable, tampered, or private to
+ * parties the reader has not proven to be. Tries this app's own store first, then `uri` (e.g. a termsURI
+ * recorded as http://localhost:3000/…, which only works on the machine that registered it). The hash check
+ * makes the source irrelevant.
  */
-export async function getEvidence<T>(hash: Hex, uri?: string): Promise<T | null> {
-  for (const source of [`/api/evidence/${hash}`, uri]) {
+export async function getEvidence<T>(hash: Hex, uri?: string, scope: EvidenceScope = {}): Promise<T | null> {
+  const params = new URLSearchParams()
+  if (scope.agreementId !== undefined) params.set('agreementId', scope.agreementId.toString())
+  if (scope.registrationId) params.set('registrationId', scope.registrationId)
+  const pass = storedAccess(scope.account)
+  const own = `/api/evidence/${hash}${params.size ? `?${params}` : ''}`
+  for (const source of [own, uri]) {
     if (!source) continue
     try {
-      const res = await fetch(source)
+      const res = await fetch(source, source === own && pass ? { headers: { [ACCESS_HEADER]: pass } } : undefined)
       if (!res.ok) continue
       const value = await res.json()
       if (hashEvidence(value) === hash) return value as T
     } catch {}
   }
   return null
+}
+
+// --- Private evidence --------------------------------------------------------------------------
+// The full agreement and decision notes are released only to the agreement's parties. A party proves which
+// wallet it controls with a signed read pass (no transaction, valid for a day); the server checks that wallet
+// against the parties recorded in the registry. Terms and Chainlink reports stay public so anyone can re-check.
+
+export const ACCESS_HEADER = 'x-lexdiff-access'
+export const ACCESS_TTL = 24 * 60 * 60
+export const ACCESS_TYPES = {
+  Access: [
+    { name: 'account', type: 'address' },
+    { name: 'expires', type: 'uint256' },
+  ],
+} as const
+
+const passes = new Map<string, string>()
+const accessKey = (account: Address) => `lexdiff:access:${account.toLowerCase()}`
+
+/** This browser's unexpired read pass for `account`, if it has one. */
+export function storedAccess(account: Address | null | undefined): string | null {
+  if (!account) return null
+  let pass = passes.get(account.toLowerCase()) ?? null
+  try {
+    pass ??= localStorage.getItem(accessKey(account))
+  } catch {}
+  return pass && Number(pass.split('.')[1]) > Date.now() / 1000 + 60 ? pass : null
+}
+
+/** Signs a read pass for the current identity. MetaMask asks once a day; a presentation persona signs silently. */
+export async function unlockAccess(): Promise<Address> {
+  const { wallet, account } = await connectWallet()
+  const expires = BigInt(Math.floor(Date.now() / 1000) + ACCESS_TTL)
+  const signature = await wallet.signTypedData({
+    account,
+    domain: DOMAIN(),
+    types: ACCESS_TYPES,
+    primaryType: 'Access',
+    message: { account, expires },
+  })
+  const pass = `${account}.${expires}.${signature}`
+  passes.set(account.toLowerCase(), pass)
+  try {
+    localStorage.setItem(accessKey(account), pass)
+  } catch {}
+  return account
+}
+
+/** In presentation mode there is no prompt, so private documents are unlocked automatically. */
+export async function autoUnlock(account: Address | null) {
+  if (account && activePersona() && !storedAccess(account)) await unlockAccess().catch(() => {})
 }
 
 // --- Wallet ----------------------------------------------------------------

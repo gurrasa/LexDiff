@@ -28,6 +28,8 @@ export const ROLES: Record<Role, { label: string; who: string; can: string }> = 
   },
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
 const ALL: Role[] = ['client', 'reviewer', 'developer', 'freelancer']
 
 /** The roles this wallet holds. A developer who is also the payee is shown simply as the developer. */
@@ -60,7 +62,7 @@ const undecided = (f: Finding) =>
   f.remediation === Remediation.None &&
   (f.disposition === Disposition.Undecided || f.disposition === Disposition.Disputed)
 
-export const STEPS = ['Agreement signed', 'Code checked', 'Decisions', 'Fix', 'Re-check', 'Decided'] as const
+export const STEPS = ['Agreement signed', 'Contract', 'Code checked', 'Decisions', 'Fix', 'Re-check', 'Decided'] as const
 
 export type Stage = {
   step: number
@@ -86,12 +88,28 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   const toFix = findings.filter(
     (f) => f.remediation === Remediation.Required || f.remediation === Remediation.Reopened,
   ).length
-  const pending = a.pendingTarget !== '0x0000000000000000000000000000000000000000'
+  const pending = !same(a.pendingTarget, ZERO_ADDRESS)
   const s = summarize(findings)
 
+  // The parties agree first; the developer then builds the contract, proposes it, and the client approves it.
+  if (same(a.target, ZERO_ADDRESS)) {
+    return pending
+      ? {
+          step: 1,
+          title: 'The client needs to approve the contract',
+          detail: 'The developer proposed the smart contract that will hold the money. Approving it starts the Chainlink check against the signed terms. It does not move any money.',
+          waitingFor: 'client',
+        }
+      : {
+          step: 1,
+          title: 'The developer needs to propose the smart contract',
+          detail: 'The agreement is signed. The developer deploys the escrow contract on Sepolia, with the client and payee as the parties, and proposes it here.',
+          waitingFor: 'developer',
+        }
+  }
   if (!lastCheck) {
     return {
-      step: 1,
+      step: 2,
       title: 'Chainlink needs to check the contract',
       detail: 'Chainlink reads the deployed code and compares it with the signed terms. Nobody involved in the deal controls this check.',
       waitingFor: 'chainlink',
@@ -99,7 +117,7 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   }
   if (!same(lastCheck.target, a.target)) {
     return {
-      step: 4,
+      step: 5,
       title: 'Chainlink needs to check the approved contract',
       detail: 'Only a new check can show which properties now pass. A fix counts only when the same property explicitly passes.',
       waitingFor: 'chainlink',
@@ -107,7 +125,7 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   }
   if (toDecide > 0) {
     return {
-      step: 2,
+      step: 3,
       title: `${toDecide} failing propert${toDecide > 1 ? 'ies need' : 'y needs'} a decision`,
       detail: 'For each one, the lawyer can require a fix, or the client can knowingly accept the risk. A disputed property needs one of those decisions too. Accepting does not make it pass. Every decision is signed.',
       waitingFor: 'reviewer',
@@ -115,7 +133,7 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   }
   if (pending) {
     return {
-      step: 3,
+      step: 4,
       title: 'The client needs to approve the corrected contract',
       detail: 'Approving chooses which contract the client will fund. It does not move any money; the next check reports where the funds actually are.',
       waitingFor: 'client',
@@ -123,7 +141,7 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
   }
   if (toFix > 0) {
     return {
-      step: 3,
+      step: 4,
       title: `The developer needs to fix ${toFix} propert${toFix > 1 ? 'ies' : 'y'}`,
       detail: 'Fix the code, deploy the corrected contract, and propose it here. Saying it is fixed is not enough: Chainlink checks the same properties again.',
       waitingFor: 'developer',
@@ -135,7 +153,7 @@ export function stageOf(a: Agreement, findings: Finding[], checks: Check[]): Sta
     s.notChecked && `${s.notChecked} not checked in the latest run`,
   ].filter(Boolean)
   return {
-    step: 5,
+    step: 6,
     title: s.failing === 0 ? 'Every checked property passes' : 'Every failing property has a decision',
     detail:
       `${s.fixed} fix${s.fixed === 1 ? '' : 'es'} verified by Chainlink.` +

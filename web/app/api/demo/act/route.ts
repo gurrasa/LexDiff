@@ -4,10 +4,10 @@ import { type Persona, PERSONAS, personaAccount } from '@/lib/personas'
 import { rateLimited } from '@/lib/rate-limit'
 import { publicClient, REGISTRY_ADDRESS, RPC_URL, registrationFromJson, registryAbi } from '@/lib/registry'
 
-// Acts as a presentation-mode identity. It can only sign LexDiff's own EIP-712 messages for this registry
+// Acts as a presentation-mode identity. It can only sign LexDiff's own EIP-712 messages for this registry (including read passes)
 // and only call this registry, so the demo keys cannot be used for anything else.
 
-const SIGNABLE = ['Registration', 'Decision']
+const SIGNABLE = ['Registration', 'Decision', 'Access']
 const WRITABLE = ['registerAgreement', 'submitDecision', 'proposeContract', 'acceptContract', 'requestCheck'] as const
 type Writable = (typeof WRITABLE)[number]
 
@@ -30,6 +30,7 @@ function decodeArgs(functionName: Writable, args: unknown[]): readonly unknown[]
 /** JSON carries bigints as strings; restore them inside typed-data messages. */
 function restoreMessage(primaryType: string, m: Record<string, unknown>) {
   if (primaryType === 'Registration') return registrationFromJson(m)
+  if (primaryType === 'Access') return { ...m, expires: BigInt(m.expires as string) }
   return { ...m, agreementId: BigInt(m.agreementId as string), nonce: BigInt(m.nonce as string), deadline: BigInt(m.deadline as string) }
 }
 
@@ -54,7 +55,7 @@ export async function POST(request: Request) {
         Number(td.domain.chainId) === sepolia.id &&
         getAddress(String(td.domain.verifyingContract)) === getAddress(REGISTRY_ADDRESS)
       if (!td || !forThisRegistry || !SIGNABLE.includes(td.primaryType)) {
-        return Response.json({ error: 'only LexDiff registrations and decisions can be signed' }, { status: 400 })
+        return Response.json({ error: 'only LexDiff registrations, decisions and read passes can be signed' }, { status: 400 })
       }
       const signature = await account.signTypedData({
         domain: { ...td.domain, chainId: sepolia.id },

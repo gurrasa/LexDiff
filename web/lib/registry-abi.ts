@@ -1355,6 +1355,11 @@ export const registryAbi = [
   },
   {
     "type": "error",
+    "name": "NoContractYet",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "NoPendingContract",
     "inputs": [
       {

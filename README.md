@@ -34,6 +34,8 @@ In RACI terms: the developer is *Responsible* for fixes, the client is *Accounta
 - **Signatures prove key control, not identity.** Under eIDAS an EIP-712 signature is at most a *simple electronic signature*. It cannot be refused as evidence solely for being electronic (art. 25), but without identity binding it carries limited weight.
 - **Signatures are bound to evidence.** Every decision signs the finding's current `evidenceHash`. If the finding changes before submission, the signature is rejected. Nobody can later claim they accepted something they never saw.
 - **Only hashes on-chain.** Terms (party names, wallets), CRE report documents (which describe vulnerabilities) and decision notes live in a content-addressed evidence store. The chain holds only their `keccak256` hashes. This avoids publishing vulnerabilities and personal data on an immutable ledger (GDPR erasure), while keeping everything verifiable.
+- **Confidential to the parties.** The full agreement text and decision notes are released only to the agreement's client, lawyer, developer and payee. A party proves its wallet with a signed read pass (EIP-712 `Access`, no transaction, valid 24 hours); the store checks it against the parties recorded in the registry. Terms and Chainlink reports stay public so anyone can re-check them.
+- **Honest verification levels.** 🔢 results are read from the live contract on Sepolia. 📄 results are structural: the verified source has the right shape, but nothing was executed. A fix verified only structurally is flagged as such in the app.
 - **Human oversight of AI.** The extraction is a draft. The reviewer's signature over the terms hash records who approved it.
 - **History is append-only.** Nothing is overwritten: an amendment is a new agreement, a regression reopens a finding, and a dispute is added alongside.
 
@@ -47,7 +49,7 @@ In RACI terms: the developer is *Responsible* for fixes, the client is *Accounta
 
 The registry has no owner and no global settings. Each agreement names its own **verifier** (CRE forwarder, plus an optional pinned workflow owner and workflow ID) inside the registration that the client and reviewer sign. Nobody can change it afterwards, including the deployer.
 
-A redeployed contract is **proposed** by the developer or reviewer and **approved** by the client, who will fund it. Approval chooses the contract; it does not move money. Each CRE report reads the token balance of the approved contract and of the previous one, so the record shows where the funds actually are.
+The parties sign the agreement **before the code exists**. The developer then deploys the escrow contract and **proposes** it; the client, who will fund it, **approves** it, and that starts the first check. A corrected contract goes through the same propose → approve path. (If the contract already exists, it can be named in the registration and is checked straight away.) Approval chooses the contract; it does not move money. Each CRE report reads the token balance of the approved contract and of the previous one, so the record shows where the funds actually are.
 
 ## Status model: four independent dimensions
 
@@ -126,7 +128,7 @@ Each report also lists the terms that were **not** checked automatically (today:
 
 **Agreement** ([agreements/freelance-escrow.md](agreements/freelance-escrow.md)): the client deposits 1,000 USDC. The freelancer delivers within 30 days, and the client has 7 days to review. If the deadline is missed, the client is refunded. No one may withdraw the escrowed funds.
 
-**FreelanceEscrowV1** produces:
+The lawyer and the client sign the agreement. The developer then proposes **FreelanceEscrowV1** and the client approves it. Chainlink's first check produces:
 
 - ⚠️ Delivery deadline: expected 30 days, actual 3 days
 - ❌ Refund if deadline is missed: no refund function
@@ -209,7 +211,7 @@ The app needs a persistent disk for its evidence store and signing requests.
 4. **Variables**:
    - `ANTHROPIC_API_KEY`
    - `NEXT_PUBLIC_REGISTRY_ADDRESS`
-   - `NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK=12019746`
+   - `NEXT_PUBLIC_REGISTRY_DEPLOYMENT_BLOCK=12026189`
    - `NEXT_PUBLIC_SEPOLIA_RPC_URL`
    - `EVIDENCE_DIR=/data/evidence`
    - `REGISTRATIONS_DIR=/data/registrations`
@@ -249,9 +251,9 @@ The worker uses `cre/lexdiff-workflow/config.staging.json`, so `evidenceStoreUrl
 
 ### 4. Finish the demo
 
-The agreement page shows where you are (*Agreement signed → Code checked → Decisions → Fix → Re-check → Ready*) and who has to act next. With one wallet holding every role, use **Act as** to switch between client, reviewer and developer.
+The agreement page shows where you are (*Agreement signed → Contract → Code checked → Decisions → Fix → Re-check → Decided*) and who has to act next. In presentation mode, switch roles in the header.
 
-1. **Run the Chainlink check.** Three issues appear, each in plain language ("The agreement says 30 days / The code does 3 days").
+1. As developer: propose the contract you deployed (`escrowV1` is prefilled). As client: approve it. **Chainlink checks it.** Three issues appear, each in plain language ("The agreement says 30 days / The code does 3 days").
 2. As reviewer: *Developer must fix this* on the deadline and refund. As developer: *I have seen this*.
 3. As client: *I accept this risk* on the hidden power.
 4. As developer: propose the corrected contract (`escrowV2` is prefilled). As client: approve it.
@@ -261,8 +263,8 @@ The agreement page shows where you are (*Agreement signed → Code checked → D
 
 | What | Where | Status |
 |---|---|---|
-| LexDiffRegistry | Sepolia [`0x3840…3c71`](https://sepolia.etherscan.io/address/0x38409d09225d4dec903e99623a4abc17e5563c71#code), block 12019746 | Deployed and verified |
-| LexDiffLogic (library) | Sepolia [`0x281c…be17`](https://sepolia.etherscan.io/address/0x281c27308eb6fca49e0c4cbca1f10ce0f660be17#code) | Deployed and verified |
+| LexDiffRegistry | Sepolia [`0x1dc9…a7fd`](https://sepolia.etherscan.io/address/0x1dc9a1af1d6818ed9fc945598caaa0eef8b0a7fd#code), block 12026189 | Deployed and verified |
+| LexDiffLogic (library) | Sepolia [`0xb0ed…d487`](https://sepolia.etherscan.io/address/0xb0edb5b48a52819ef7f265a2651ba8a498f7d487#code) | Deployed and verified |
 | Demo escrows V1 / V2 / WebsiteEscrow, MockUSDC | Addresses in [contracts/deployments/11155111.json](contracts/deployments/11155111.json) | Deployed and verified |
 | Registry tests | `forge test` | 22/22 pass |
 | Workflow tests | `npm test` in `cre/lexdiff-workflow` | 15/15 pass |
@@ -274,7 +276,7 @@ The agreement page shows where you are (*Agreement signed → Code checked → D
 ## Tests
 
 ```bash
-cd contracts && forge test                       # 22 tests: signatures, roles, verifier pinning, status model, disputes, amendments
+cd contracts && forge test                       # 23 tests: signatures, roles, signing before the contract exists, verifier pinning, status model, disputes, amendments
 cd cre/lexdiff-workflow && npm test              # 15 tests: comparison, explicit results, removed powers, levels/coverage, second agreement, report hashing
 cd cre/lexdiff-workflow && bun x cre-compile main.ts /tmp/lexdiff.wasm   # WASM build check
 ```

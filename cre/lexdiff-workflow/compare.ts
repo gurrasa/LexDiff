@@ -168,7 +168,7 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 	durationTerm('reviewPeriod', 'Client review period', terms.deadlines.reviewPeriodDays, onchain.reviewPeriod)
 
 	level = 'structural'
-	method = 'Analysed the verified source: refund function exists, checks the deadline and pays the client (not executed)'
+	method = 'Structural: the verified source has a refund function that checks the deadline and pays the client. It was not executed, so this does not prove a refund succeeds'
 	if (terms.refund.onMissedDeadline) {
 		const refundFn = analysis.abi.find(
 			(f) => REFUND_NAMES.test(f.name) && f.stateMutability !== 'view' && f.stateMutability !== 'pure',
@@ -240,7 +240,7 @@ export const removedPowers = (
 	const seen = new Set(current.map((f) => f.key.toLowerCase()))
 	const clause = 'Admin power (removed)'
 	const expected = 'not granted by agreement'
-	const actual = 'function no longer present in the verified source'
+	const actual = 'function no longer present in the verified source (a renamed, inherited or proxied power is not ruled out)'
 	return previous
 		.filter((p) => p.kind === Kind.HiddenPower && p.verification === Result.Fail && !seen.has(p.key.toLowerCase()))
 		.map((p) => ({
@@ -252,6 +252,6 @@ export const removedPowers = (
 			actual,
 			detailsHash: detailsHash(clause, expected, actual),
 			level: 'structural' as const,
-			method: 'Analysed the verified source: the privileged function found earlier is gone',
+			method: 'Structural: the privileged function found earlier is no longer in the verified source. The comparison is by name, so it does not rule out the same power under another name',
 		}))
 }

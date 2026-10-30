@@ -1,8 +1,8 @@
 {
   "chainId": 11155111,
-  "deployBlock": 12019746,
-  "registry": "0x38409d09225d4dec903e99623a4abc17e5563c71",
-  "logic": "0x281c27308eb6fca49e0c4cbca1f10ce0f660be17",
+  "deployBlock": 12026189,
+  "registry": "0x1dc9a1af1d6818ed9fc945598caaa0eef8b0a7fd",
+  "logic": "0xb0edb5b48a52819ef7f265a2651ba8a498f7d487",
   "usdc": "0x524b1cd9efc10ecdc5803eb807b194f2c6ed842f",
   "escrowV1": "0x75b856249ee6bf055914156114041497d75a6448",
   "escrowV2": "0x7fea53530ad81ce56f380d8ce5d3560161524861",

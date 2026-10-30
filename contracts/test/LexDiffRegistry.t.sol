@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {LexDiffRegistry} from "../src/LexDiffRegistry.sol";
 import {ILexDiff} from "../src/ILexDiff.sol";
 
@@ -170,6 +170,34 @@ contract LexDiffRegistryTest is Test {
         registry.registerAgreement(r, c, rv);
         vm.expectRevert(ILexDiff.RegistrationReplayed.selector);
         registry.registerAgreement(r, c, rv);
+    }
+
+    function test_partiesCanSignBeforeTheContractExists() public {
+        ILexDiff.Registration memory r = _registration(0);
+        r.target = address(0);
+        r.termsHash = keccak256("agreed before the code exists");
+        vm.recordLogs();
+        uint256 later = _register(r);
+        // No contract yet, so nothing to check: no CheckRequested, and nobody can request or report one.
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; i++) assertTrue(logs[i].topics[0] != ILexDiff.CheckRequested.selector);
+        assertEq(registry.getContractHistory(later).length, 0);
+        vm.prank(client);
+        vm.expectRevert(ILexDiff.NoContractYet.selector);
+        registry.requestCheck(later);
+        vm.prank(forwarder);
+        vm.expectRevert(ILexDiff.NoContractYet.selector);
+        registry.onReport("", abi.encode(later, address(0), bytes32(0), r.termsHash, bytes32(0), _v1()));
+
+        // The developer proposes the contract they built; the client's approval starts the first check.
+        vm.prank(developer);
+        registry.proposeContract(later, escrowV1);
+        vm.prank(client);
+        vm.expectEmit(address(registry));
+        emit ILexDiff.CheckRequested(later, escrowV1, r.termsHash);
+        registry.acceptContract(later, escrowV1);
+        assertEq(registry.getAgreement(later).target, escrowV1);
+        assertEq(registry.getContractHistory(later).length, 1);
     }
 
     function test_amendmentSupersedesWithSameSigners() public {

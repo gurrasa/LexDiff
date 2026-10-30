@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import type { Address, Hex } from 'viem'
+import { type Address, type Hex, zeroAddress } from 'viem'
 import { ROLES, type Role, rolesOf, STEPS, stageOf } from '@/lib/plain'
 import {
   type Agreement,
@@ -95,7 +95,7 @@ export default function Home() {
         <div>
           <h3 style={{ margin: 0 }}>{row.terms?.title ?? `Agreement #${row.id}`}</h3>
           <span className="small muted">
-            #{row.id.toString()} · contract {shortAddr(row.agreement.target)}
+            #{row.id.toString()} · {same(row.agreement.target, zeroAddress) ? 'no contract yet' : `contract ${shortAddr(row.agreement.target)}`}
             {roles.length > 0 && <> · you are the {roles.map((r) => ROLES[r].label.toLowerCase()).join(' & ')}</>}
           </span>
         </div>
@@ -194,11 +194,12 @@ export default function Home() {
       <h2 id="how">How it works</h2>
       <ol className="steps">
         <li><b>Agreement signed.</b> The lawyer pastes the agreement; Claude extracts the terms with a quote for each. The lawyer and the client both sign the full agreement and the terms.</li>
+        <li><b>Contract.</b> The developer builds the escrow contract and proposes it; the client approves it as the contract to fund. No money moves yet.</li>
         <li><b>Code checked.</b> Chainlink, which no party controls, reads the smart contract on Sepolia and checks every term: Pass or Fail.</li>
         <li><b>Decisions.</b> For each failing property the lawyer can require a fix, or the client can knowingly accept the risk. Anyone involved can confirm they saw it, or dispute it.</li>
-        <li><b>Fix.</b> The developer deploys a corrected contract and proposes it; the client approves it as the contract to fund.</li>
+        <li><b>Fix.</b> The developer deploys a corrected contract and proposes it; the client approves it.</li>
         <li><b>Re-check.</b> Chainlink checks again. A fix is verified only when the same property now passes.</li>
-        <li><b>Decided.</b> Every failing property is verified as fixed or has a signed decision. An accepted risk still shows Fail.</li>
+        <li><b>Decided.</b> Every failing property is verified as fixed or has a signed decision. An accepted risk still shows Fail. Now the client can fund the approved contract.</li>
       </ol>
 
       <h2>Who is involved</h2>

@@ -44,6 +44,7 @@ library LexDiffLogic {
         ) = abi.decode(report, (uint256, address, bytes32, bytes32, bytes32, ILexDiff.FindingInput[]));
 
         (bytes32 workflowId, address workflowOwner) = _verifyReporter(a.verifier, metadata);
+        if (a.target == address(0)) revert ILexDiff.NoContractYet();
         if (target != a.target) revert ILexDiff.StaleTarget(target, a.target);
         if (termsHash != a.termsHash) revert ILexDiff.TermsMismatch(termsHash, a.termsHash);
 

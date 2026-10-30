@@ -8,6 +8,7 @@ import { isFailing, KIND_PLAIN, ROLES, type Role, rolesOf, roleNames, STEPS, sta
 import {
   type Agreement,
   type AgreementDocument,
+  autoUnlock,
   type AgreementEvent,
   type Check,
   connectWallet,
@@ -34,7 +35,9 @@ import {
   watchAccount,
   same,
   shortAddr,
+  storedAccess,
   submitSigned,
+  unlockAccess,
   VERIFICATION,
   Verification,
   writeRegistry,
@@ -84,6 +87,7 @@ export default function AgreementView() {
   const [error, setError] = useState('')
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [newTarget, setNewTarget] = useState('')
+  const [demo, setDemo] = useState<{ escrowV1?: Address; escrowV2?: Address }>({})
   const [showEvidence, setShowEvidence] = useState(false)
   const [log, setLog] = useState('')
   const [presenting, setPresenting] = useState(false)
@@ -96,10 +100,13 @@ export default function AgreementView() {
       registry.getContractHistory(id),
       registry.getEvents(id).catch(() => [] as AgreementEvent[]),
     ])
+    // The agreement text and notes are private to the parties; terms and reports are public.
+    const scope = { agreementId: id, account }
+    await autoUnlock(account)
     const [terms, reports, document] = await Promise.all([
       getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI),
       Promise.all(checks.map((c) => getEvidence<ReportDocument>(c.reportHash))),
-      getEvidence<AgreementDocument>(agreement.agreementHash),
+      getEvidence<AgreementDocument>(agreement.agreementHash, undefined, scope),
     ])
     // Details are only shown when the off-chain report hashes to what Chainlink anchored on-chain.
     const details: Record<string, Details> = {}
@@ -117,12 +124,12 @@ export default function AgreementView() {
     const hashes = new Set(Object.values(decisions).flat().map((d) => d.noteHash).filter((h) => h !== ZERO_BYTES32))
     await Promise.all(
       [...hashes].map(async (h) => {
-        const v = await getEvidence<{ note: string }>(h)
+        const v = await getEvidence<{ note: string }>(h, undefined, scope)
         if (v) noteText[h] = v.note
       }),
     )
     setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText, chainEvents, document })
-  }, [id])
+  }, [id, account])
 
   useEffect(() => {
     personas().then((p) => setPresenting(!!p))
@@ -142,15 +149,15 @@ export default function AgreementView() {
     load().catch((e) => setError(String(e?.shortMessage ?? e)))
     fetch('/api/demo')
       .then((r) => r.json())
-      .then((d) => d.escrowV2 && setNewTarget((t) => t || d.escrowV2))
+      .then(setDemo)
       .catch(() => {})
   }, [load])
 
-  // While a check is pending, poll the chain so the report shows up without a manual reload.
+  // Live view: other parties' decisions and Chainlink reports show up without a reload. Poll faster while a
+  // check is pending.
   const waitingForChainlink = !!data && stageOf(data.agreement, data.findings, data.checks).waitingFor === 'chainlink'
   useEffect(() => {
-    if (!waitingForChainlink) return
-    const timer = setInterval(() => load().catch(() => {}), 10_000)
+    const timer = setInterval(() => load().catch(() => {}), waitingForChainlink ? 8_000 : 15_000)
     return () => clearInterval(timer)
   }, [waitingForChainlink, load])
 
@@ -160,6 +167,8 @@ export default function AgreementView() {
     try {
       await fn()
       await load()
+      // Public RPC nodes can lag a block behind the one that mined the transaction: read again shortly.
+      for (const ms of [3_000, 8_000]) setTimeout(() => load().catch(() => {}), ms)
     } catch (e) {
       const err = e as { shortMessage?: string; message?: string }
       setError(err.shortMessage ?? err.message ?? String(e))
@@ -230,6 +239,9 @@ export default function AgreementView() {
   const coverage = latestReport?.coverage
   const operational = latestReport?.operational
   const pending = a.pendingTarget !== ZERO
+  const noContract = same(a.target, ZERO)
+  // Demo convenience: the first proposal defaults to the flawed V1, a replacement to the corrected V2.
+  const proposal = newTarget || (noContract ? demo.escrowV1 : demo.escrowV2) || ''
   const isMock = same(a.verifier.forwarder, '0x15fC6ae953E024d975e77382eEeC56A9101f9F88')
   const simulateCmd = `cd cre && cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \\\n  --non-interactive --trigger-index 0 --http-payload '{"agreementId":${idParam}}'`
   const clauseOf = (f: Finding) => (f.detailsHash === ZERO_BYTES32 ? past[f.key]?.at(-1)?.clause : details[f.detailsHash]?.clause) ?? 'Unknown term'
@@ -278,7 +290,7 @@ export default function AgreementView() {
 
   // Plain-language history of everything that happened.
   const events: { t: bigint; text: string; note?: string }[] = [
-    { t: a.createdAt, text: 'Agreement registered. The reviewer and the client signed the terms.' },
+    { t: a.createdAt, text: 'Agreement registered. The lawyer and the client signed the agreement and the terms.' },
     ...checks.map((c, i) => ({
       t: c.timestamp,
       text: `Chainlink check #${i + 1} of contract ${shortAddr(c.target)}: ${c.passed} pass, ${c.failed} fail${c.inconclusive ? `, ${c.inconclusive} inconclusive` : ''}.`,
@@ -294,6 +306,10 @@ export default function AgreementView() {
       .filter((f) => f.remediation === Remediation.FixVerified)
       .map((f) => ({ t: f.fixVerifiedAt, text: `Chainlink verified the fix: ${clauseOf(f)} now passes.` })),
   ].sort((x, y) => Number(x.t - y.t))
+
+  const structuralFixes = findings.filter(
+    (f) => f.remediation === Remediation.FixVerified && details[f.detailsHash]?.level === 'structural',
+  ).length
 
   // In presentation mode, the next step's role is one click away.
   const ROLE_PERSONA: Partial<Record<Role, Persona>> = { reviewer: 'lawyer', client: 'client', developer: 'developer' }
@@ -343,11 +359,20 @@ export default function AgreementView() {
     if (stage.waitingFor === 'developer' && role === 'developer') {
       return (
         <div className="stack">
-          <label>Which corrected contract should replace {shortAddr(a.target)}?</label>
-          <ContractPicker value={newTarget} onChange={setNewTarget} />
+          <label>
+            {noContract
+              ? 'Which smart contract did you deploy for this agreement?'
+              : `Which corrected contract should replace ${shortAddr(a.target)}?`}
+          </label>
+          <ContractPicker value={proposal} onChange={setNewTarget} />
+          {noContract && (
+            <p className="small muted" style={{ margin: 0 }}>
+              It must name the client&apos;s and the payee&apos;s wallets from the agreement; Chainlink checks that too.
+            </p>
+          )}
           <button
-            disabled={!!busy || !isAddress(newTarget)}
-            onClick={() => run('Proposing the corrected contract', async () => void (await writeRegistry('proposeContract', [id, newTarget])))}
+            disabled={!!busy || !isAddress(proposal)}
+            onClick={() => run('Proposing the contract', async () => void (await writeRegistry('proposeContract', [id, proposal])))}
           >
             Propose this contract
           </button>
@@ -437,6 +462,12 @@ export default function AgreementView() {
         </span>
         <h2>{stage.title}</h2>
         <p style={{ margin: 0 }}>{stage.detail}</p>
+        {structuralFixes > 0 && (
+          <p className="small" style={{ margin: '0.5rem 0 0' }}>
+            📄 {structuralFixes} of the verified fixes {structuralFixes === 1 ? 'is' : 'are'} structural only: the code is there, but
+            Chainlink did not run it.
+          </p>
+        )}
         {nextAction()}
       </section>
 
@@ -461,7 +492,8 @@ export default function AgreementView() {
         <section className="panel small" style={{ marginTop: '1rem' }}>
           <b>What was checked.</b> {coverage.checked} agreement terms compared: {coverage.byLevel.value}{' '}
           {LEVEL_PLAIN.value.icon} by reading the contract&apos;s values on Sepolia, {coverage.byLevel.structural}{' '}
-          {LEVEL_PLAIN.structural.icon} by analysing its verified source code.
+          {LEVEL_PLAIN.structural.icon} by analysing its verified source code. A {LEVEL_PLAIN.structural.icon} result means the
+          code has the right shape; it was not executed, so it is weaker evidence than a {LEVEL_PLAIN.value.icon} value.
           {coverage.unchecked.length > 0 ? (
             <>
               <div style={{ marginTop: '0.5rem' }}>
@@ -540,6 +572,12 @@ export default function AgreementView() {
                   {LEVEL_PLAIN[(d?.level ?? before?.level)!].icon} {LEVEL_PLAIN[(d?.level ?? before?.level)!].label}
                 </div>
               )}
+              {fixed && d?.level === 'structural' && (
+                <div className="small notice" style={{ marginTop: 4 }}>
+                  Chainlink found the required code in the new contract&apos;s verified source, but did not run it. Test this behaviour
+                  before funding the contract.
+                </div>
+              )}
               <div className="says">
                 <div><span>The agreement says</span>{d?.expected ?? before?.expected ?? '—'}</div>
                 {fixed && before ? (
@@ -554,7 +592,7 @@ export default function AgreementView() {
                   {ds.map((x, i) => (
                     <li key={i}>
                       The <b>{roleNames(a, x.signer)}</b> {DECISION_VERB[x.decision]} this · {fmtTime(x.timestamp)}
-                      {x.noteHash !== ZERO_BYTES32 && noteText[x.noteHash] && <> — “{noteText[x.noteHash]}”</>}
+                      {x.noteHash !== ZERO_BYTES32 && (noteText[x.noteHash] ? <> — “{noteText[x.noteHash]}”</> : <span className="muted"> · 🔒 private note</span>)}
                     </li>
                   ))}
                 </ul>
@@ -652,16 +690,26 @@ export default function AgreementView() {
                   </li>
                 ))}
               </ol>
-              {pending && <div>Proposed replacement <code>{shortAddr(a.pendingTarget)}</code> <span className="badge tone-warn">waiting for the client</span></div>}
+              {noContract && !pending && <div className="muted">None yet. The developer proposes it after the agreement is signed.</div>}
+              {pending && <div>Proposed {noContract ? 'contract' : 'replacement'} <code>{shortAddr(a.pendingTarget)}</code> <span className="badge tone-warn">waiting for the client</span></div>}
             </div>
             <div>
               <b>LexDiff record</b>: stores fingerprints (hashes) of the agreement, terms, findings and signatures. It never touches the money.
             </div>
-            {agreementDoc && (
+            {agreementDoc ? (
               <details>
                 <summary>The signed agreement document</summary>
                 <pre style={{ whiteSpace: 'pre-wrap' }}>{agreementDoc.text}</pre>
               </details>
+            ) : myRoles.length > 0 && !storedAccess(account) ? (
+              <div>
+                <button className="ghost small" disabled={!!busy} onClick={() => run('Unlocking the private documents', async () => void (await unlockAccess()))}>
+                  🔒 Show the signed agreement and notes
+                </button>
+                <div className="muted small">Private to the parties. Your wallet signs a read pass (no transaction, valid for 24 hours).</div>
+              </div>
+            ) : (
+              <div className="muted">🔒 The signed agreement and decision notes are private to the parties.</div>
             )}
             <div>
               <b>Checked by</b>: Chainlink CRE{' '}
@@ -681,7 +729,7 @@ export default function AgreementView() {
               </div>
             )}
           </div>
-          {role && (
+          {role && !noContract && (
             <button className="ghost small" style={{ marginTop: '0.75rem' }} disabled={!!busy} onClick={() => run('Requesting a new check', async () => void (await writeRegistry('requestCheck', [id])))}>
               Ask Chainlink to check again
             </button>
