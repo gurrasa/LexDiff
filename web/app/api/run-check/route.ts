@@ -1,3 +1,5 @@
+import { authorizedMutation, boundedJson, payloadResponse } from '@/lib/server/request-guard'
+import { registry, same } from '@/lib/registry'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -14,14 +16,23 @@ const creBinary = () => {
 }
 
 export async function POST(request: Request) {
-  if (process.env.ENABLE_LOCAL_CRE?.trim() !== 'true') {
+  if (process.env.NODE_ENV === 'production' || process.env.ENABLE_LOCAL_CRE?.trim() !== 'true') {
     return Response.json(
       { error: 'Running the check from the browser is disabled. Set ENABLE_LOCAL_CRE=true in web/.env.local, or run the command in a terminal.' },
       { status: 403 },
     )
   }
-  const { agreementId } = (await request.json()) as { agreementId?: string }
-  if (!agreementId || !/^\d+$/.test(agreementId)) return Response.json({ error: 'bad agreementId' }, { status: 400 })
+  const caller = authorizedMutation(request)
+  if (!caller) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  let input: { agreementId?: string }
+  try { input = await boundedJson(request, 1_024) as typeof input }
+  catch (error) { return payloadResponse(error) }
+  const { agreementId } = input ?? {}
+  if (!agreementId || !/^[1-9]\d{0,15}$/.test(agreementId)) return Response.json({ error: 'bad agreementId' }, { status: 400 })
+  const agreement = await registry.getAgreement(BigInt(agreementId)).catch(() => null)
+  if (!agreement || ![agreement.client, agreement.reviewer, agreement.developer, agreement.freelancer].some(a => same(a, caller))) {
+    return Response.json({ error: 'Not found' }, { status: 404 })
+  }
 
   const args = [
     'workflow', 'simulate', 'lexdiff-workflow',

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { isAddress, isHex, type Address, type Hex } from 'viem'
 import {
+  authenticateWallet,
   connectWallet,
   putEvidence,
   type Registration,
@@ -93,6 +94,7 @@ export default function NewAgreement() {
 
   const publish = () =>
     run('Saving the approved terms', async () => {
+      await authenticateWallet()
       for (const [k, v] of Object.entries(roles)) if (!isAddress(v)) throw new Error(`The ${k} needs a valid wallet address.`)
       if (!isAddress(verifier.forwarder)) throw new Error('The forwarder must be an address.')
       if (verifier.workflowOwner && !isAddress(verifier.workflowOwner)) throw new Error('The workflow owner must be an address.')

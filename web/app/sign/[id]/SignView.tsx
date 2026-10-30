@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Address } from 'viem'
 import {
   type AgreementDocument,
+  authenticateWallet,
   connectWallet,
   DOMAIN,
   EXPLORER,
@@ -45,14 +46,11 @@ export default function SignView() {
     if (!res.ok) throw new Error(body.error)
     const p = { ...body, registration: registrationFromJson(body.registration) } as PendingRegistration
     setPending(p)
-    setTerms(await getEvidence<EscrowTerms>(p.registration.termsHash, p.registration.termsURI))
-    setDocument(await getEvidence<AgreementDocument>(p.registration.agreementHash))
+    setTerms(await getEvidence<EscrowTerms>(p.registration.termsHash, p.registration.termsURI, { registrationId: p.id }))
+    setDocument(await getEvidence<AgreementDocument>(p.registration.agreementHash, undefined, { registrationId: p.id }))
   }, [id])
 
-  useEffect(() => {
-    load().catch((e) => setError(String(e.message ?? e)))
-    return watchAccount(setAccount)
-  }, [load])
+  useEffect(() => watchAccount(setAccount), [])
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label)
@@ -67,8 +65,15 @@ export default function SignView() {
     }
   }
 
-  if (error && !pending) return <p className="error">{error}</p>
-  if (!pending) return <p className="muted">Loading the registration…</p>
+  if (!pending) return <section className="panel">
+    <h2>Private signing request</h2>
+    <p>Sign in with a participating wallet to view the agreement and its signatures.</p>
+    {error && <p className="error">{error}</p>}
+    <button disabled={!!busy} onClick={() => run('Authenticating', async () => {
+      setAccount(await authenticateWallet())
+      await load()
+    })}>Connect and sign in</button>
+  </section>
 
   const r = pending.registration
   const sigs = pending.signatures
@@ -82,6 +87,7 @@ export default function SignView() {
   const sign = () =>
     run('Waiting for your signature in MetaMask', async () => {
       const { wallet, account } = await connectWallet()
+      if (!same(await authenticateWallet(), account)) throw new Error('Wallet changed during sign-in')
       const role = (['reviewer', 'client'] as Role[]).find((x) => same(account, r[x]) && !sigs[x])
       if (!role) throw new Error('This wallet has nothing left to sign here.')
       const signature = await wallet.signTypedData({ account, domain: DOMAIN(), types: REGISTRATION_TYPES, primaryType: 'Registration', message: r })
@@ -94,7 +100,8 @@ export default function SignView() {
 
   const register = () =>
     run('Registering on Sepolia', async () => {
-      // Both signatures are already collected, so the app's relayer can submit it: nobody needs gas for this.
+      // Authenticate before using the gas-sponsored relayer.
+      await authenticateWallet()
       const { agreementId } = await submitSigned('registerAgreement', [r, sigs.client, sigs.reviewer])
       if (!agreementId) throw new Error('Registered, but the agreement number could not be read. Check the agreements list.')
       await fetch(`/api/registrations/${id}`, { method: 'POST', body: JSON.stringify({ agreementId }) })
@@ -126,7 +133,7 @@ export default function SignView() {
       <h1>{terms?.title ?? 'Agreement'}</h1>
       <p className="lede">
         Before this agreement is registered, the lawyer and the client each sign exactly these terms with their own wallet.
-        Send this page to whoever still needs to sign.
+        Send this page to whoever still needs to sign. These signatures do not establish that the freelancer or another affected party has consented.
       </p>
       {pending.agreementId && (
         <p className="notice">Registered as <Link href={`/agreements/${pending.agreementId}`}>agreement #{pending.agreementId}</Link>.</p>
@@ -138,6 +145,7 @@ export default function SignView() {
       <div className="grid two" style={{ marginTop: '1rem' }}>
         <section className="panel stack">
           <h2 style={{ margin: 0 }}>What is being signed</h2>
+              <p className="notice">Signing demonstrates control of this wallet only. Identity, representative capacity, authority and the freelancer's independent consent have not been verified. Registration is not proof of a binding amendment or legal compliance.</p>
           {terms ? (
             <>
               <ul style={{ margin: 0 }}>
@@ -188,7 +196,7 @@ export default function SignView() {
           </table>
 
           {!account ? (
-            <button onClick={() => run('Connecting', async () => setAccount((await connectWallet()).account))} disabled={!!busy}>Connect wallet</button>
+            <button onClick={() => run('Authenticating', async () => { setAccount(await authenticateWallet()); await load() })} disabled={!!busy}>Connect wallet</button>
           ) : toSign.length > 0 && !expired && !pending.agreementId ? (
             <>
               {toSign.map((role) => <p key={role} className="small" style={{ margin: 0 }}>{WHAT_YOU_SIGN[role]}</p>)}

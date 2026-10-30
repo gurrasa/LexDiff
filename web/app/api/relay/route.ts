@@ -2,6 +2,8 @@ import { BaseError, ContractFunctionRevertedError, createWalletClient, decodeEve
 import { privateKeyToAccount } from 'viem/accounts'
 import { sepolia } from 'viem/chains'
 import { rateLimited } from '@/lib/rate-limit'
+import { authorizedMutation, boundedJson, payloadResponse } from '@/lib/server/request-guard'
+import { same, registry } from '@/lib/registry'
 import { publicClient, REGISTRY_ADDRESS, RPC_URL, registrationFromJson, registryAbi } from '@/lib/registry'
 
 // Gasless submission of already-signed actions. The registry decides who acted from the EIP-712 signature,
@@ -43,16 +45,32 @@ function decodeArgs(functionName: Relayable, args: unknown[]): readonly unknown[
 }
 
 export async function POST(request: Request) {
+  const caller = authorizedMutation(request)
+  if (!caller) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   const account = relayer()
   if (!account) return Response.json({ error: 'relayer not configured' }, { status: 501 })
-  if (rateLimited(request, 60, 60 * 60 * 1000)) return Response.json({ error: 'Too many requests, try again later.' }, { status: 429 })
+  if (rateLimited(request, 10, 60 * 60 * 1000)) return Response.json({ error: 'Too many requests, try again later.' }, { status: 429 })
 
-  const { functionName, args } = (await request.json()) as { functionName?: string; args?: unknown[] }
+  let input: { functionName?: string; args?: unknown[] }
+  try { input = await boundedJson(request, 16_000) as typeof input }
+  catch (error) { return payloadResponse(error) }
+  const { functionName, args } = input ?? {}
   if (!RELAYABLE.includes(functionName as Relayable) || !Array.isArray(args)) {
     return Response.json({ error: 'only signed actions can be relayed' }, { status: 400 })
   }
 
   try {
+    if (functionName === 'registerAgreement') {
+      const reg = registrationFromJson(args[0] as Record<string, unknown>)
+      if (![reg.client, reg.reviewer].some(a => same(a, caller))) return Response.json({ error: 'Forbidden' }, { status: 403 })
+    } else {
+      if (!same(String(args[6]), caller)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+      const agreementId = BigInt(args[0] as string)
+      const agreement = await registry.getAgreement(agreementId)
+      if (![agreement.client, agreement.reviewer, agreement.developer, agreement.freelancer].some(a => same(a, caller))) {
+        return Response.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
     const call = {
       account,
       address: REGISTRY_ADDRESS,

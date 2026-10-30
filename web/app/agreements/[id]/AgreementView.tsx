@@ -10,6 +10,7 @@ import {
   type AgreementDocument,
   type AgreementEvent,
   type Check,
+  authenticateWallet,
   connectWallet,
   DECISION_TYPES,
   type Decision,
@@ -42,6 +43,7 @@ import {
 } from '@/lib/registry'
 import ContractPicker from '@/components/ContractPicker'
 import type { EscrowTerms } from '@/lib/terms'
+import { renderLegalCaseRecord } from '@/lib/case-record'
 
 type Details = { clause: string; expected: string; actual: string; level?: Level; method?: string }
 type Past = Details & { kind: number; check: number }
@@ -95,9 +97,9 @@ export default function AgreementView() {
       registry.getEvents(id).catch(() => [] as AgreementEvent[]),
     ])
     const [terms, reports, document] = await Promise.all([
-      getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI),
-      Promise.all(checks.map((c) => getEvidence<ReportDocument>(c.reportHash))),
-      getEvidence<AgreementDocument>(agreement.agreementHash),
+      getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI, { agreementId: id }),
+      Promise.all(checks.map((c) => getEvidence<ReportDocument>(c.reportHash, undefined, { agreementId: id }))),
+      getEvidence<AgreementDocument>(agreement.agreementHash, undefined, { agreementId: id }),
     ])
     // Details are only shown when the off-chain report hashes to what Chainlink anchored on-chain.
     const details: Record<string, Details> = {}
@@ -112,13 +114,12 @@ export default function AgreementView() {
     const decisions: Record<string, Decision[]> = {}
     await Promise.all(findings.map(async (f) => (decisions[f.key] = await registry.getDecisions(id, f.key))))
     const noteText: Record<string, string> = {}
-    const hashes = new Set(Object.values(decisions).flat().map((d) => d.noteHash).filter((h) => h !== ZERO_BYTES32))
-    await Promise.all(
-      [...hashes].map(async (h) => {
-        const v = await getEvidence<{ note: string }>(h)
-        if (v) noteText[h] = v.note
+    await Promise.all(Object.entries(decisions).flatMap(([findingKey, entries]) =>
+      entries.filter(d => d.noteHash !== ZERO_BYTES32).map(async d => {
+        const v = await getEvidence<{ note: string }>(d.noteHash, undefined, { agreementId: id, findingKey: findingKey as Hex })
+        if (v) noteText[d.noteHash] = v.note
       }),
-    )
+    ))
     setData({ agreement, terms, findings, checks, reports, details, past, history, decisions, notes: noteText, chainEvents, document })
   }, [id])
 
@@ -163,8 +164,8 @@ export default function AgreementView() {
   }
 
   const connect = () =>
-    run('Connecting wallet', async () => {
-      const { account } = await connectWallet()
+    run('Authenticating wallet', async () => {
+      const account = await authenticateWallet()
       setAccount(account)
       if (data) setActingAs(rolesOf(data.agreement, account)[0] ?? null)
     })
@@ -174,6 +175,7 @@ export default function AgreementView() {
       const note = (notes[f.key] ?? '').trim()
       if (decision === DecisionType.Dispute && !note) throw new Error('Write why you disagree before disputing.')
       const { wallet, account } = await connectWallet()
+      if (!same(await authenticateWallet(), account)) throw new Error('Wallet changed during sign-in')
       const noteHash = note ? (await putEvidence(noteValue(note))).hash : ZERO_BYTES32
       const nonce = await registry.nonces(account)
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 3600)
@@ -192,6 +194,7 @@ export default function AgreementView() {
   const runCheck = () =>
     run('Chainlink is checking the contract (30–90 seconds)', async () => {
       setLog('')
+      await authenticateWallet()
       const res = await fetch('/api/run-check', { method: 'POST', body: JSON.stringify({ agreementId: idParam }) })
       if (!res.ok) throw new Error((await res.json()).error)
       const reader = res.body!.getReader()
@@ -228,7 +231,7 @@ export default function AgreementView() {
   const simulateCmd = `cd cre && cre workflow simulate lexdiff-workflow --target staging-settings --broadcast \\\n  --non-interactive --trigger-index 0 --http-payload '{"agreementId":${idParam}}'`
   const clauseOf = (f: Finding) => (f.detailsHash === ZERO_BYTES32 ? past[f.key]?.at(-1)?.clause : details[f.detailsHash]?.clause) ?? 'Unknown term'
 
-  const downloadRecord = () => {
+  const assembleRecord = () => {
     // Self-contained: the off-chain documents travel with the record, so /verify (or anyone) can
     // re-hash them against the on-chain anchors without trusting LexDiff's evidence store.
     const documents: Record<string, unknown> = {}
@@ -261,13 +264,34 @@ export default function AgreementView() {
         'An accepted risk is still a failing property. Approving a contract does not move funds.',
       ],
     }
-    const json = JSON.stringify(record, (_key, value) => typeof value === 'bigint' ? value.toString() : value, 2)
+    return JSON.parse(JSON.stringify(record, (_key, value) => typeof value === 'bigint' ? value.toString() : value)) as Record<string, unknown>
+  }
+
+  const downloadRecord = async () => {
+    if (!account || myRoles.length === 0 || !same(await authenticateWallet(), account)) {
+      setError('Sign in as an agreement participant before exporting private case evidence.')
+      return
+    }
+    const json = JSON.stringify(assembleRecord(), null, 2)
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }))
     const link = document.createElement('a')
     link.href = url
     link.download = `lexdiff-agreement-${idParam}-record.json`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  const printLegalRecord = async () => {
+    if (!account || myRoles.length === 0 || !same(await authenticateWallet(), account)) {
+      setError('Sign in as an agreement participant before exporting private case evidence.')
+      return
+    }
+    const printable = renderLegalCaseRecord(assembleRecord())
+    const url = URL.createObjectURL(new Blob([printable], { type: 'text/html;charset=utf-8' }))
+    const tab = window.open(url, '_blank')
+    if (!tab) { setError('Allow pop-ups for this site to open the printable record.'); URL.revokeObjectURL(url) }
+    else { tab.opener = null }
+    // Use Print → Save as PDF in the new tab; caller controls local disclosure.
   }
 
   // Plain-language history of everything that happened.
@@ -339,7 +363,7 @@ export default function AgreementView() {
     if (stage.waitingFor === 'client' && pending && role === 'client') {
       return (
         <button onClick={() => run('Approving the new contract', async () => void (await writeRegistry('acceptContract', [id, a.pendingTarget])))} disabled={!!busy}>
-          Approve {shortAddr(a.pendingTarget)} as the contract to fund
+          Register {shortAddr(a.pendingTarget)} for re-verification (not migrated or active)
         </button>
       )
     }
@@ -453,7 +477,7 @@ export default function AgreementView() {
           )}
         </section>
       )}
-      {checks.length > 0 && issues.length === 0 && <p className="notice">Every checked property passes.</p>}
+      {checks.length > 0 && issues.length === 0 && <p className="notice">Every reported checked property passes within its stated method. Unchecked clauses and operational activation remain separate.</p>}
       {operational && (
         <section className="panel small" style={{ marginTop: '1rem' }}>
           <b>Where the money is.</b> Approved contract {shortAddr(operational.target)} holds{' '}
@@ -588,7 +612,8 @@ export default function AgreementView() {
       <div className="grid two" style={{ marginTop: '2rem' }}>
         <section>
           <h2>What happened</h2>
-          <button className="ghost small" onClick={downloadRecord}>Export case record</button>
+          <button className="ghost small" onClick={() => downloadRecord().catch(e => setError(String(e)))}>Export JSON case record</button>
+          <button className="ghost small" onClick={() => printLegalRecord().catch(e => setError(String(e)))}>Printable Legal Case Record (Save as PDF)</button>
           <ul className="timeline">
             {events.map((e, i) => (
               <li key={i}>

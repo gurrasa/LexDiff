@@ -2,49 +2,77 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { keccak256, toBytes } from 'viem'
 import { canonicalize, escrowTermsSchema } from '@/lib/terms'
-
-// Content-addressed evidence store for everything that must not live on-chain in plaintext:
-// reviewed terms, CRE report documents and decision notes. Each item is stored as canonical JSON
-// under keccak256(canonical), which is exactly the hash anchored on-chain.
+import { evidenceKind, saveMetadata } from '@/lib/server/evidence-access'
+import { isServiceRequest } from '@/lib/server/evidence-security'
+import { validReportEnvelope } from '@/lib/server/evidence-report'
+import { reportSafetyIssues } from '@/lib/verification/report-safety'
+import { allowedCREAgreement } from '@/lib/server/production-gates'
+import { sessionAddress, validOrigin } from '@/lib/server/wallet-session'
 
 const DIR = process.env.EVIDENCE_DIR?.trim() || path.join(process.cwd(), 'data', 'evidence')
-
+const MAX_BYTES = 256_000
+const json = (error: string, status: number) => Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } })
 export async function POST(request: Request) {
-  // Evidence documents are small JSON; refuse anything that could be used to fill the disk.
-  if (Number(request.headers.get('content-length') ?? 0) > 256_000) {
-    return Response.json({ error: 'evidence document too large' }, { status: 413 })
-  }
+  const declared = request.headers.get('content-length')
+  if (declared && Number(declared) > MAX_BYTES) return json('Evidence too large', 413)
+  // Bounds actual streamed bytes even when Content-Length is absent or dishonest.
+  const reader = request.body?.getReader()
+  if (!reader) return json('Body must be JSON', 400)
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_BYTES) { await reader.cancel(); return json('Evidence too large', 413) }
+      chunks.push(value)
+    }
+  } catch { return json('Unable to read body', 400) }
+  finally { reader.releaseLock() }
   let value: unknown
   try {
-    value = await request.json()
-  } catch {
-    return Response.json({ error: 'body must be JSON' }, { status: 400 })
+    const bytes = new Uint8Array(size)
+    let offset = 0
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength }
+    value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))
+  } catch { return json('Body must be JSON', 400) }
+
+  const kind = evidenceKind(value)
+  if (!kind) return json('Unsupported evidence schema', 400)
+  const service = isServiceRequest(request)
+  const address = kind === 'report' ? null : sessionAddress(request)
+  if (kind === 'report') {
+    if (!service) return json('Unauthorized', 401)
+    if (!validReportEnvelope(value)) return json('Invalid report envelope', 400)
+    if (reportSafetyIssues(value).length) return json('Report contains unsupported Pass claim', 400)
+    if (!allowedCREAgreement((value as {agreementId: string}).agreementId)) return json('CRE report agreement not authorized', 403)
+  } else {
+    if (!address || !validOrigin(request)) return json('Unauthorized', 401)
+    if (service) return json('CRE service may only upload reports', 403)
   }
-  if (value && typeof value === 'object' && (value as { schema?: string }).schema === 'lexdiff/escrow-terms@1') {
+  if (kind === 'terms') {
     const parsed = escrowTermsSchema.safeParse(value)
-    if (!parsed.success) return Response.json({ error: parsed.error.message }, { status: 400 })
+    if (!parsed.success) return json('Invalid escrow terms', 400)
     value = parsed.data
   }
-
   const canonical = canonicalize(value)
   const hash = keccak256(toBytes(canonical))
   await mkdir(DIR, { recursive: true })
   const file = path.join(DIR, `${hash}.json`)
   try {
     const existing = await readFile(file, 'utf8')
-    if (existing !== canonical) return Response.json({ error: 'immutable evidence conflict' }, { status: 409 })
+    if (existing !== canonical) return json('Immutable evidence conflict', 409)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    try {
-      await writeFile(file, canonical, { flag: 'wx' })
-    } catch (writeError) {
-      if ((writeError as NodeJS.ErrnoException).code !== 'EEXIST') throw writeError
-      if ((await readFile(file, 'utf8')) !== canonical) {
-        return Response.json({ error: 'immutable evidence conflict' }, { status: 409 })
-      }
+    try { await writeFile(file, canonical, { flag: 'wx' }) }
+    catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+      if (await readFile(file, 'utf8') !== canonical) return json('Immutable evidence conflict', 409)
     }
   }
-
+  try { await saveMetadata({ hash, kind, ...(address && kind !== 'report' ? { creator: address } : {}), created: new Date().toISOString() }) }
+  catch { return json('Evidence ownership conflict', 409) }
   const base = process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, '') || new URL(request.url).origin
-  return Response.json({ hash, uri: `${base}/api/evidence/${hash}` })
+  return Response.json({ hash, uri: `${base}/api/evidence/${hash}` }, { headers: { 'Cache-Control': 'no-store' } })
 }

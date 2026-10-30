@@ -7,3 +7,13 @@ contracts/broadcast
 *.wasm
 .DS_Store
 .cre_build_tmp.js
+
+# Private CRE configuration
+cre/secrets.yaml
+
+# Private CRE configuration
+cre/secrets.yaml
+# Prevent local runtime evidence and deployment-specific environment files entering PRs
+web/data/
+**/.env.*
+!**/.env.example

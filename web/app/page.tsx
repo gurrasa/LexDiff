@@ -7,7 +7,7 @@ import { ROLES, type Role, rolesOf, STEPS, stageOf } from '@/lib/plain'
 import {
   type Agreement,
   type Check,
-  connectWallet,
+  authenticateWallet,
   type Finding,
   getEvidence,
   REGISTRY_ADDRESS,
@@ -45,7 +45,7 @@ export default function Home() {
           ids.map(async (id) => {
             const agreement = await registry.getAgreement(id)
             const [terms, findings, checks] = await Promise.all([
-              getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI),
+              getEvidence<EscrowTerms>(agreement.termsHash, agreement.termsURI, { agreementId: id }),
               registry.getFindings(id),
               registry.getChecks(id),
             ])
@@ -67,7 +67,7 @@ export default function Home() {
           await Promise.all(
             list.map(async (p) => {
               const r = p.registration
-              const terms = await getEvidence<EscrowTerms>(r.termsHash as Hex, r.termsURI)
+              const terms = await getEvidence<EscrowTerms>(r.termsHash as Hex, r.termsURI, { registrationId: p.id })
               const role = same(account, r.reviewer) ? 'reviewer' : 'client'
               return { id: p.id, title: terms?.title ?? 'Agreement', role, other: role === 'reviewer' ? r.client : r.reviewer }
             }),
@@ -126,7 +126,7 @@ export default function Home() {
             each problem, who accepted it, and whether a fix was verified.
           </p>
           <div className="row" style={{ marginTop: '1rem' }}>
-            <button onClick={() => connectWallet().then((w) => setAccount(w.account)).catch((e) => setError(e.message))}>
+            <button onClick={() => authenticateWallet().then(setAccount).catch((e) => setError(e.message))}>
               Connect your wallet to see your agreements
             </button>
             <a href="#how" className="button ghost">How it works</a>

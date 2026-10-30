@@ -70,9 +70,9 @@ const CHECK_REQUESTED_TOPIC = toEventSelector('CheckRequested(uint256,address,by
 // ---------------------------------------------------------------------------
 
 /** Fetches the terms JSON and returns it canonicalized, so formatting differences cannot change the hash. */
-const fetchTerms = (requester: HTTPSendRequester, termsURI: string): string => {
+const fetchTerms = (requester: HTTPSendRequester, termsURI: string, token: string): string => {
 	// The hash check makes the exact URI string irrelevant to integrity; tolerate stray whitespace in it.
-	const response = requester.sendRequest({ url: termsURI.trim(), method: 'GET' }).result()
+	const response = requester.sendRequest({ url: termsURI.trim(), method: 'GET', headers: { authorization: `Bearer ${token}` } }).result()
 	if (!ok(response)) throw new Error(`terms fetch failed: HTTP ${response.statusCode}`)
 	return canonicalize(escrowTermsSchema.parse(JSON.parse(text(response))))
 }
@@ -97,12 +97,12 @@ const fetchSourceAnalysis = (
 }
 
 /** Stores the full report off-chain. The store is content-addressed and must echo the same hash. */
-const storeReport = (requester: HTTPSendRequester, url: string, canonical: string, hash: string): string => {
+const storeReport = (requester: HTTPSendRequester, url: string, canonical: string, hash: string, token: string): string => {
 	const response = requester
 		.sendRequest({
 			url,
 			method: 'POST',
-			headers: { 'content-type': 'application/json' },
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
 			body: hexToBase64(toHex(toBytes(canonical))),
 		})
 		.result()
@@ -172,8 +172,9 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 	if (a.supersededBy !== 0n) runtime.log(`Note: agreement #${agreementId} is superseded by #${a.supersededBy}`)
 
 	// 2. Agreement terms, verified against the hash registered on-chain.
+	const evidenceToken = runtime.getSecret({ id: 'LEXDIFF_EVIDENCE_API_TOKEN' }).result().value
 	const canonicalTerms = http
-		.sendRequest(runtime, fetchTerms, consensusIdenticalAggregation<string>())(a.termsURI)
+		.sendRequest(runtime, fetchTerms, consensusIdenticalAggregation<string>())(a.termsURI, evidenceToken)
 		.result()
 	const computedHash = keccak256(toBytes(canonicalTerms))
 	if (computedHash !== a.termsHash) {
@@ -226,6 +227,7 @@ const runCheck = (runtime: Runtime<Config>, agreementId: bigint): string => {
 			config.evidenceStoreUrl,
 			report.canonical,
 			report.hash,
+			evidenceToken,
 		)
 		.result()
 	runtime.log(`Report document stored (${report.hash})`)

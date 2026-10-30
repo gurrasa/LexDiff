@@ -69,6 +69,7 @@ test('V2 fixes deadline and refund, keeps the withdrawal power', () => {
 	const f = byClause(compare(terms, analysis, onchain(30n)))
 	assert.equal(f['Delivery deadline'].kind, Kind.Match)
 	assert.equal(f['Refund if deadline is missed'].kind, Kind.Match)
+	assert.equal(f['Refund if deadline is missed'].result, Result.Inconclusive)
 	assert.equal(f['Admin power: withdraw-funds'].kind, Kind.HiddenPower)
 })
 
@@ -182,17 +183,21 @@ test('second agreement: granted pause is a match, unlisted deadline setter is a 
 	assert.equal(f['Client review period'].kind, Kind.Mismatch)
 	assert.equal(f['Client review period'].actual, '2 days')
 	assert.equal(f['Refund if deadline is missed'].kind, Kind.Match)
+	assert.equal(f['Refund if deadline is missed'].result, Result.Inconclusive)
 	assert.equal(f['Admin power: pause'].kind, Kind.Match)
 	assert.equal(f['Admin power: modify-terms'].kind, Kind.HiddenPower)
 	assert.match(f['Admin power: modify-terms'].actual, /setDeliveryPeriod/)
 })
 
-test('every property carries an explicit result: Match passes, everything else fails', () => {
+test('every property carries an explicit result; structural refund patterns cannot Pass', () => {
 	const findings = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
-	for (const f of findings) assert.equal(f.result, f.kind === Kind.Match ? Result.Pass : Result.Fail, f.clause)
+	for (const f of findings) {
+		const expected = f.clause === 'Refund if deadline is missed' && f.kind === Kind.Match ? Result.Inconclusive : f.kind === Kind.Match ? Result.Pass : Result.Fail
+		assert.equal(f.result, expected, f.clause)
+	}
 })
 
-test('a hidden power that disappears is reported as an explicit pass of the same property', () => {
+test('a missing admin function name cannot verify removal of privileged capabilities', () => {
 	const v1 = compare(terms, analysisFor('FreelanceEscrowV1.sol', 'FreelanceEscrowV1', false), onchain(3n))
 	const power = v1.find((f) => f.kind === Kind.HiddenPower)!
 	const previous = v1.map((f) => ({ key: f.key, kind: f.kind, verification: f.result }))
@@ -201,8 +206,9 @@ test('a hidden power that disappears is reported as an explicit pass of the same
 	const removed = removedPowers(previous, now)
 	assert.equal(removed.length, 1)
 	assert.equal(removed[0].key, power.key)
-	assert.equal(removed[0].result, Result.Pass)
-	assert.equal(removed[0].kind, Kind.Match)
+	assert.equal(removed[0].result, Result.Inconclusive)
+	assert.equal(removed[0].kind, Kind.HiddenPower)
+	assert.match(removed[0].actual, /unverified/)
 	// Still present: nothing to add.
 	assert.equal(removedPowers(previous, v1).length, 0)
 })

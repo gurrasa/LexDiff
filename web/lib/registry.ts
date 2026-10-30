@@ -237,17 +237,17 @@ export async function putEvidence(value: unknown): Promise<{ hash: Hex; uri: str
  * Tries this app's own store first, then `uri` (e.g. a termsURI recorded as http://localhost:3000/…,
  * which only works on the machine that registered it). The hash check makes the source irrelevant.
  */
-export async function getEvidence<T>(hash: Hex, uri?: string): Promise<T | null> {
-  for (const source of [`/api/evidence/${hash}`, uri]) {
-    if (!source) continue
-    try {
-      const res = await fetch(source)
-      if (!res.ok) continue
-      const value = await res.json()
-      if (hashEvidence(value) === hash) return value as T
-    } catch {}
-  }
-  return null
+export async function getEvidence<T>(hash: Hex, _uri?: string, scope?: { agreementId?: bigint; registrationId?: Hex; findingKey?: Hex }): Promise<T | null> {
+  const params = new URLSearchParams()
+  if (scope?.agreementId !== undefined) params.set('agreementId', scope.agreementId.toString())
+  if (scope?.registrationId) params.set('registrationId', scope.registrationId)
+  if (scope?.findingKey) params.set('findingKey', scope.findingKey)
+  try {
+    const res = await fetch(`/api/evidence/${hash}${params.size ? `?${params}` : ''}`, { cache: 'no-store', credentials: 'same-origin' })
+    if (!res.ok) return null
+    const value = await res.json()
+    return hashEvidence(value) === hash ? value as T : null
+  } catch { return null }
 }
 
 // --- Wallet ----------------------------------------------------------------
@@ -277,6 +277,25 @@ export async function connectWallet() {
   const [account] = await wallet.requestAddresses()
   if ((await wallet.getChainId()) !== sepolia.id) await wallet.switchChain({ id: sepolia.id })
   return { wallet, account }
+}
+
+export async function authenticateWallet(): Promise<Address> {
+  const { wallet, account } = await connectWallet()
+  const response = await fetch('/api/auth/challenge', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ address: account }),
+  })
+  const challenge = await response.json() as { message?: string; error?: string }
+  if (!response.ok || !challenge.message) throw new Error(challenge.error || 'Unable to obtain wallet challenge')
+  const signature = await wallet.signMessage({ account, message: challenge.message })
+  const verified = await fetch('/api/auth/verify', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+    body: JSON.stringify({ address: account, message: challenge.message, signature }),
+  })
+  const result = await verified.json() as { address?: Address; error?: string }
+  if (!verified.ok || !result.address || result.address.toLowerCase() !== account.toLowerCase()) {
+    throw new Error(result.error || 'Wallet sign-in failed')
+  }
+  return result.address
 }
 
 export async function writeRegistry(functionName: string, args: readonly unknown[]) {

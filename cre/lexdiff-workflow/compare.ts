@@ -168,7 +168,7 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 	durationTerm('reviewPeriod', 'Client review period', terms.deadlines.reviewPeriodDays, onchain.reviewPeriod)
 
 	level = 'structural'
-	method = 'Analysed the verified source: refund function exists, checks the deadline and pays the client (not executed)'
+	method = 'Structural source review only; refund behavior, caller, amount, timing and state transitions were NOT executed or verified'
 	if (terms.refund.onMissedDeadline) {
 		const refundFn = analysis.abi.find(
 			(f) => REFUND_NAMES.test(f.name) && f.stateMutability !== 'view' && f.stateMutability !== 'pure',
@@ -190,6 +190,9 @@ export const compare = (terms: EscrowTerms, analysis: SourceAnalysis, onchain: O
 			terms.refund.description || 'client refunded when delivery deadline is missed',
 			actual,
 		)
+		// Source-pattern recognition is not proof that a real refund can succeed.
+		// Keep the structural observation, but do not emit a technical Pass without behavioral evidence.
+		if (valid) findings[findings.length - 1].result = Result.Inconclusive
 	}
 
 	// Privileged functions the agreement does not grant are hidden powers.
@@ -230,28 +233,30 @@ export const coverage = (terms: EscrowTerms, findings: Finding[]): Coverage => (
 })
 
 /**
- * A hidden power that failed before but is absent from this check was removed from the code. Report that as an
- * explicit Pass of the same property: the registry never treats a missing property as fixed.
+ * Absence of an old privileged function NAME does not prove its CAPABILITY disappeared.
+ * The power could be renamed, inherited, proxied, delegated or moved to another call path.
+ * Preserve the finding key, but mark the current observation inconclusive so the registry
+ * cannot emit FixVerified on the strength of a missing name alone.
  */
 export const removedPowers = (
 	previous: readonly { key: `0x${string}`; kind: number; verification: number }[],
 	current: Finding[],
 ): Finding[] => {
 	const seen = new Set(current.map((f) => f.key.toLowerCase()))
-	const clause = 'Admin power (removed)'
-	const expected = 'not granted by agreement'
-	const actual = 'function no longer present in the verified source'
+	const clause = 'Previously detected admin power (not re-identified)'
+	const expected = 'independent verification that the privileged asset-transfer capability is unreachable'
+	const actual = 'the previous function identifier was not observed in this source scan; capability removal is unverified'
 	return previous
 		.filter((p) => p.kind === Kind.HiddenPower && p.verification === Result.Fail && !seen.has(p.key.toLowerCase()))
 		.map((p) => ({
 			key: p.key,
-			kind: Kind.Match,
-			result: Result.Pass,
+			kind: Kind.HiddenPower,
+			result: Result.Inconclusive,
 			clause,
 			expected,
 			actual,
 			detailsHash: detailsHash(clause, expected, actual),
 			level: 'structural' as const,
-			method: 'Analysed the verified source: the privileged function found earlier is gone',
+			method: 'Name-based comparison cannot establish absence of inherited, renamed, proxy or indirect privileges',
 		}))
 }

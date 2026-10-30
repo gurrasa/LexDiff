@@ -29,7 +29,7 @@ export async function savePending(p: Stored) {
 
 /** Pending registrations in which `address` is the client or the reviewer and has not signed yet. */
 export async function pendingFor(address: string): Promise<Stored[]> {
-  const files = await readdir(DIR).catch(() => [] as string[])
+  const files = await readdir(/* turbopackIgnore: true */ DIR).catch(() => [] as string[])
   const all = await Promise.all(files.filter((f) => f.endsWith('.json')).map((f) => loadPending(f.slice(0, -5))))
   const me = address.toLowerCase()
   return all.filter((p): p is Stored => {

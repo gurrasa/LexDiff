@@ -1,21 +1,24 @@
 import { isAddress } from 'viem'
 import { loadPending, pendingFor, registrationId, savePending } from '@/lib/pending'
-import { registrationFromJson, registrationToJson } from '@/lib/registry'
+import { registrationFromJson, registrationToJson, same } from '@/lib/registry'
+import { authorizedMutation, boundedJson, payloadResponse } from '@/lib/server/request-guard'
+import { sessionAddress } from '@/lib/server/wallet-session'
 
-/** Creates (or returns) a pending registration that the reviewer and client sign via /sign/[id]. */
+/** Creates a pending registration only for an authenticated participant. */
 export async function POST(request: Request) {
-  if (Number(request.headers.get('content-length') ?? 0) > 16_000) {
-    return Response.json({ error: 'registration too large' }, { status: 413 })
-  }
-  const body = (await request.json()) as { registration?: Record<string, unknown> }
+  const caller = authorizedMutation(request)
+  if (!caller) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  let body: { registration?: Record<string, unknown> }
+  try { body = await boundedJson(request, 16_000) as typeof body }
+  catch (error) { return payloadResponse(error) }
   let registration
-  try {
-    registration = registrationFromJson(body.registration ?? {})
-  } catch {
-    return Response.json({ error: 'invalid registration' }, { status: 400 })
-  }
+  try { registration = registrationFromJson(body?.registration ?? {}) }
+  catch { return Response.json({ error: 'Invalid registration' }, { status: 400 }) }
   for (const k of ['client', 'reviewer', 'developer', 'freelancer', 'target'] as const) {
     if (!isAddress(registration[k] ?? '')) return Response.json({ error: `${k} must be an address` }, { status: 400 })
+  }
+  if (![registration.client, registration.reviewer, registration.freelancer, registration.developer].some(a => same(a, caller))) {
+    return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
   const id = registrationId(registration)
   const existing = await loadPending(id)
@@ -25,9 +28,12 @@ export async function POST(request: Request) {
   return Response.json(pending)
 }
 
-/** GET ?address=0x… lists signing requests waiting for that wallet. */
+/** A caller can list only their own pending signing requests. */
 export async function GET(request: Request) {
+  const caller = sessionAddress(request)
+  if (!caller) return Response.json({ error: 'Unauthorized' }, { status: 401 })
   const address = new URL(request.url).searchParams.get('address') ?? ''
-  if (!isAddress(address)) return Response.json({ error: 'address required' }, { status: 400 })
-  return Response.json(await pendingFor(address))
+  if (!isAddress(address)) return Response.json({ error: 'Address required' }, { status: 400 })
+  if (!same(address, caller)) return Response.json({ error: 'Forbidden' }, { status: 403 })
+  return Response.json(await pendingFor(caller))
 }
