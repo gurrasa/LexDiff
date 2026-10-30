@@ -49,7 +49,7 @@ In RACI terms: the developer is *Responsible* for fixes, the client is *Accounta
 
 The registry has no owner and no global settings. Each agreement names its own **verifier** (CRE forwarder, plus an optional pinned workflow owner and workflow ID) inside the registration that the client and reviewer sign. Nobody can change it afterwards, including the deployer.
 
-The parties sign the agreement **before the code exists**. The developer then deploys the escrow contract and **proposes** it; the client, who will fund it, **approves** it, and that starts the first check. A corrected contract goes through the same propose → approve path. (If the contract already exists, it can be named in the registration and is checked straight away.) Approval chooses the contract; it does not move money. Each CRE report reads the token balance of the approved contract and of the previous one, so the record shows where the funds actually are.
+The parties sign the agreement **before the code exists**. The developer then deploys the escrow contract and **proposes** it; the client, who will fund it, **approves** it, and that starts the first check. A corrected contract goes through the same propose → approve path. (The registry also accepts a contract named in the registration, but the app always leaves it to the developer.) Approval chooses the contract; it does not move money. Each CRE report reads the token balance of the approved contract and of the previous one, so the record shows where the funds actually are.
 
 ## Status model: four independent dimensions
 
@@ -122,7 +122,7 @@ Each report also lists the terms that were **not** checked automatically (today:
 
 ### A second agreement
 
-[agreements/website-redesign.md](agreements/website-redesign.md) + [WebsiteEscrow.sol](contracts/src/demo/WebsiteEscrow.sol) show that nothing is hard-coded: different amounts and deadlines, a review period that is wrong (2 days vs 5), a pause power the agreement **grants** (✅ Match), and a deadline setter it does not (🚩 Hidden power). On `/new`, use **Second demo: website redesign**.
+[agreements/website-redesign.md](agreements/website-redesign.md) + [WebsiteEscrow.sol](contracts/src/demo/WebsiteEscrow.sol) show that nothing is hard-coded: different amounts and deadlines, a review period that is wrong (2 days vs 5), a pause power the agreement **grants** (✅ Match), and a deadline setter it does not (🚩 Hidden power). Paste [agreements/website-redesign.md](agreements/website-redesign.md) on `/new` and propose `WebsiteEscrow` as the contract.
 
 ## The demo
 
@@ -228,7 +228,7 @@ The CRE workflow still runs from a laptop. Point it at the hosted store by setti
 
 When `DEMO_LAWYER_KEY`, `DEMO_CLIENT_KEY` and `DEMO_DEVELOPER_KEY` are set on the web service, the header shows **Presenting as ⚖️ Lawyer · 🏢 Client · 👩‍💻 Developer · 🦊 My wallet**. One click switches identity: every page then shows that party's view, and its actions are signed and sent by the server with that identity's testnet key. No MetaMask, no account switching. When it is another party's turn, the *Next* box offers **Switch to … ▸**.
 
-The demo escrows are deployed with the demo client as client and the developer as payee, so *Fill in the demo for me* sets every role correctly. The keys can only sign LexDiff registrations and decisions for this registry, and only call this registry. **🦊 My wallet** keeps the real MetaMask flow.
+The demo escrows are deployed with the demo client as client and the developer as payee, so each persona acts with the address its role needs. On `/new`, *Fill in the demo roles* gives each role its own demo wallet in one click. The keys can only sign LexDiff registrations and decisions for this registry, and only call this registry. **🦊 My wallet** keeps the real MetaMask flow.
 
 ### Automatic checks (the CRE worker)
 

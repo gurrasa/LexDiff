@@ -987,12 +987,11 @@ export default function AgreementView() {
             <section aria-labelledby="export" className="panel stack">
               <h2 id="export">Case record</h2>
               <p className="small muted" style={{ margin: 0 }}>
-                One file with the agreement, terms, reports, findings, signed decisions and transactions. Anyone can check it on the
-                Verify page against Sepolia, without trusting LexDiff.
+                One file with the agreement, terms, reports, findings, signed decisions and transactions. Every hash in it can be
+                checked against Sepolia, without trusting LexDiff.
               </p>
               <div className="row">
                 <button onClick={downloadRecord}>Export case record</button>
-                <Link href="/verify" className="button ghost">Verify a record</Link>
               </div>
             </section>
 

@@ -13,7 +13,7 @@ import {
   shortAddr,
   ZERO_BYTES32,
 } from '@/lib/registry'
-import ContractPicker from '@/components/ContractPicker'
+import { type Persona, personas } from '@/lib/identity'
 import { type EscrowTerms, escrowTermsSchema } from '@/lib/terms'
 
 const ZERO = '0x0000000000000000000000000000000000000000' as Address
@@ -22,22 +22,18 @@ export default function NewAgreement() {
   const router = useRouter()
   const [text, setText] = useState('')
   const [termsJson, setTermsJson] = useState('')
-  const [roles, setRoles] = useState({ client: '', freelancer: '', reviewer: '', developer: '', target: '' })
+  const [roles, setRoles] = useState({ client: '', freelancer: '', reviewer: '', developer: '' })
   const [verifier, setVerifier] = useState({ forwarder: SEPOLIA_MOCK_FORWARDER as string, workflowOwner: '', workflowId: '' })
   const [supersedes, setSupersedes] = useState('')
-  const [demoParties, setDemoParties] = useState<{ client?: string; freelancer?: string; developer?: string }>({})
   // Usually one person builds the work and gets paid; a separate payee is the exception.
   const [payeeIsDeveloper, setPayeeIsDeveloper] = useState(true)
+  // Presentation mode: the demo wallets for each role, so one click fills all three.
+  const [demoWallets, setDemoWallets] = useState<Record<Persona, Address> | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch('/api/demo')
-      .then((r) => r.json())
-      .then((d) => {
-        setDemoParties({ client: d.client ?? undefined, freelancer: d.freelancer ?? undefined, developer: d.developer ?? undefined })
-      })
-      .catch(() => {})
+    personas().then(setDemoWallets)
   }, [])
 
   const run = async (label: string, fn: () => Promise<void>) => {
@@ -64,38 +60,11 @@ export default function NewAgreement() {
     setTermsJson(JSON.stringify(body.terms as EscrowTerms, null, 2))
   }
 
-  const extract = () => run('Claude is reading the agreement (10–30 seconds)', () => extractFrom(text))
-
-  /** `name` is a file stem in public/demo: <name>.md (agreement) and <name>.terms.json (reviewed fallback). */
-  const fillDemo = (name: string) =>
-    run('Setting up the demo', async () => {
-      const demo = await (await fetch(`/demo/${name}.md`)).text()
-      setText(demo)
-      // You fill this in as the lawyer. Client, freelancer and developer are the parties the demo escrows were
-      // deployed with, so each of them can act from their own wallet. The contract comes later, from the developer.
-      const { account } = await connectWallet()
-      setRoles({
-        client: demoParties.client ?? account,
-        freelancer: demoParties.freelancer ?? demoParties.developer ?? account,
-        reviewer: account,
-        developer: demoParties.developer ?? account,
-        target: '',
-      })
-      setBusy('Claude is reading the agreement (10–30 seconds)')
-      try {
-        await extractFrom(demo)
-      } catch {
-        // No Claude key: fall back to the reviewed example terms.
-        setTermsJson(await (await fetch(`/demo/${name}.terms.json`)).text())
-      }
-    })
+  const extract = () => run('The AI is reading the agreement (10–30 seconds)', () => extractFrom(text))
 
   const publish = () =>
     run('Saving the approved terms', async () => {
-      for (const [k, v] of Object.entries(roles)) {
-        if (k !== 'target' && !isAddress(v)) throw new Error(`The ${k} needs a valid wallet address.`)
-      }
-      if (roles.target && !isAddress(roles.target)) throw new Error('The existing contract needs a valid address, or leave it empty.')
+      for (const [k, v] of Object.entries(roles)) if (!isAddress(v)) throw new Error(`The ${k} needs a valid wallet address.`)
       if (!isAddress(verifier.forwarder)) throw new Error('The forwarder must be an address.')
       if (verifier.workflowOwner && !isAddress(verifier.workflowOwner)) throw new Error('The workflow owner must be an address.')
       if (verifier.workflowId && !(isHex(verifier.workflowId) && verifier.workflowId.length === 66)) {
@@ -118,8 +87,8 @@ export default function NewAgreement() {
         reviewer: roles.reviewer as Address,
         developer: roles.developer as Address,
         freelancer: (payeeIsDeveloper ? roles.developer : roles.freelancer) as Address,
-        // Usually empty: the developer proposes the contract after both have signed.
-        target: (roles.target || zeroAddress) as Address,
+        // No contract yet: the developer proposes it on the agreement page after both have signed.
+        target: zeroAddress,
         agreementHash: document.hash,
         termsHash: published.hash,
         termsURI: published.uri,
@@ -232,14 +201,8 @@ export default function NewAgreement() {
         <div>
           <h1>Check an agreement against its smart contract</h1>
           <p className="lede" style={{ margin: 0 }}>
-            Four steps: paste the agreement, check what Claude understood, say who is involved, and sign.
+            Four steps: paste the agreement, check what the AI understood, say who is involved, and sign.
           </p>
-        </div>
-        <div className="row" style={{ justifyContent: 'flex-end' }}>
-          <button className="ghost" onClick={() => fillDemo('website-redesign')} disabled={!!busy}>
-            Second demo: website redesign
-          </button>
-          <button onClick={() => fillDemo('freelance-escrow')} disabled={!!busy}>Fill in the demo for me</button>
         </div>
       </section>
       {error && <p className="error">{error}</p>}
@@ -247,10 +210,10 @@ export default function NewAgreement() {
 
       <section className="panel stack">
         <h2 style={{ margin: 0 }}>1. The agreement</h2>
-        <p className="small muted" style={{ margin: 0 }}>The signed legal agreement, in plain text. Claude will pick out the terms the smart contract must follow.</p>
+        <p className="small muted" style={{ margin: 0 }}>The signed legal agreement, in plain text. AI will pick out the terms the smart contract must follow.</p>
         <textarea rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder="Paste the signed agreement…" />
         <div className="row">
-          <button onClick={extract} disabled={!!busy || !text.trim()}>Read it with Claude</button>
+          <button onClick={extract} disabled={!!busy || !text.trim()}>Read it with AI</button>
           <button className="ghost" onClick={() => run('Loading', async () => setText(await (await fetch('/demo/freelance-escrow.md')).text()))} disabled={!!busy}>
             Use the demo agreement
           </button>
@@ -261,14 +224,14 @@ export default function NewAgreement() {
               onClick={() => run('Loading prepared terms', async () => setTermsJson(await (await fetch('/demo/freelance-escrow.terms.json')).text()))}
               disabled={!!busy}
             >
-              Use prepared terms (skip Claude)
+              Use prepared terms (skip AI)
             </button>
           )}
         </div>
       </section>
 
       <section className="panel stack" style={{ marginTop: 16 }}>
-        <h2 style={{ margin: 0 }}>2. What Claude understood</h2>
+        <h2 style={{ margin: 0 }}>2. What the AI understood</h2>
         <p className="small muted" style={{ margin: 0 }}>
           AI can be wrong, so a lawyer checks this before anything is signed. Each term comes with the exact sentence it was taken from.
         </p>
@@ -277,7 +240,7 @@ export default function NewAgreement() {
           <div className="terms-form" role="table" aria-label="Extracted terms">
             <div className="terms-row head" role="row">
               <span role="columnheader">Term</span>
-              <span role="columnheader">What Claude read (you can correct it)</span>
+              <span role="columnheader">What the AI read (you can correct it)</span>
               <span role="columnheader">The agreement says</span>
             </div>
             {TERM_ROWS.map((r) => {
@@ -296,7 +259,7 @@ export default function NewAgreement() {
             })}
             {otherQuotes.length > 0 && (
               <details>
-                <summary>Other sentences Claude quoted ({otherQuotes.length})</summary>
+                <summary>Other sentences the AI quoted ({otherQuotes.length})</summary>
                 <ul className="small" style={{ margin: '8px 0 0' }}>
                   {otherQuotes.map((c, i) => <li key={i}><span className="mono">{c.term}</span>: “{c.quote}”</li>)}
                 </ul>
@@ -309,14 +272,35 @@ export default function NewAgreement() {
 
       <section className="panel stack" style={{ marginTop: 16 }}>
         <h2 style={{ margin: 0 }}>3. Who is involved</h2>
-        <p className="small muted" style={{ margin: 0 }}>
-          Wallet addresses for each role. For a one-person demo, use the same wallet everywhere.{' '}
-          <button className="ghost small" onClick={() => run('Connecting wallet', async () => {
-            const { account } = await connectWallet()
-            resetSignatures()
-            setRoles((r) => ({ client: r.client || account, freelancer: r.freelancer || account, reviewer: r.reviewer || account, developer: r.developer || account, target: r.target }))
-          })} disabled={!!busy}>Use my wallet for empty roles</button>
-        </p>
+        {demoWallets ? (
+          <div className="row">
+            <button
+              className="small"
+              disabled={!!busy}
+              onClick={() => {
+                resetSignatures()
+                setPayeeIsDeveloper(true)
+                setRoles(() => ({ reviewer: demoWallets.lawyer, client: demoWallets.client, developer: demoWallets.developer, freelancer: demoWallets.developer }))
+              }}
+            >
+              Fill in the demo roles
+            </button>
+            <span className="small muted">
+              Each role gets its own demo wallet. You switch between them with Lawyer, Client and Developer in the header.
+            </span>
+          </div>
+        ) : (
+          <div className="row">
+            <button className="ghost small" onClick={() => run('Connecting wallet', async () => {
+              const { account } = await connectWallet()
+              resetSignatures()
+              setRoles((r) => ({ client: r.client || account, freelancer: r.freelancer || account, reviewer: r.reviewer || account, developer: r.developer || account }))
+            })} disabled={!!busy}>Use my wallet for empty roles</button>
+            <span className="small muted">
+              Testing alone? One wallet can hold every role. On the agreement page you then switch with Act as.
+            </span>
+          </div>
+        )}
         <div className="grid two">
           <div><label>Lawyer (you): approves the terms</label>{field(roles.reviewer, (v) => setRoles({ ...roles, reviewer: v }))}</div>
           <div><label>Client: pays into the escrow</label>{field(roles.client, (v) => setRoles({ ...roles, client: v }))}</div>
@@ -349,12 +333,6 @@ export default function NewAgreement() {
           contract with these client and payee wallets and proposes it on the agreement page. The client approves it, and that
           starts the Chainlink check.
         </p>
-        <details>
-          <summary>The contract already exists (optional)</summary>
-          <p className="small muted">Name it here and it is part of what both of you sign, and checked as soon as the agreement is registered.</p>
-          <ContractPicker value={roles.target} onChange={(v) => setRoles({ ...roles, target: v })} />
-          {roles.target && <button className="ghost small" onClick={() => setRoles({ ...roles, target: '' })}>Leave it to the developer</button>}
-        </details>
       </section>
 
       <details className="panel" style={{ marginTop: 16 }}>
@@ -381,7 +359,7 @@ export default function NewAgreement() {
         <h2 style={{ margin: 0 }}>4. Save and send for signatures</h2>
         <p className="small muted" style={{ margin: 0 }}>
           Saving creates a signing page. The lawyer and the client each open it and sign with their own wallet. That records
-          who approved Claude&apos;s reading of the agreement. Only fingerprints (hashes) go on the blockchain; the terms stay private.
+          who approved the AI&apos;s reading of the agreement. Only fingerprints (hashes) go on the blockchain; the terms stay private.
         </p>
         <div className="row">
           <button onClick={publish} disabled={!!busy || !preview}>Save the approved terms and create the signing link</button>

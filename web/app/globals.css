@@ -25,10 +25,13 @@
   --info-bg: var(--accent-soft);
   --radius: 12px;
   --radius-control: 8px;
+  color-scheme: light;
 }
 
+/* Dark: follows the system unless the header toggle chose a theme (data-theme on <html>). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
     --bg: #121316;
     --panel: #1b1d22;
     --subtle: #24272d;
@@ -50,6 +53,29 @@
     --power: #e0a3f0;
     --power-bg: #33213a;
   }
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #121316;
+  --panel: #1b1d22;
+  --subtle: #24272d;
+  --ink: #ecebe7;
+  --ink-soft: #c9c8c3;
+  --muted: #9a9ea7;
+  --line: #2c2f36;
+  --line-strong: #41454e;
+  --accent: #8394ff;
+  --accent-hover: #a5b2ff;
+  --accent-soft: #1f2547;
+  --accent-ink: #0e1020;
+  --ok: #6fd3a0;
+  --ok-bg: #173126;
+  --warn: #f3c46b;
+  --warn-bg: #352a14;
+  --bad: #ff8a80;
+  --bad-bg: #3a1c1a;
+  --power: #e0a3f0;
+  --power-bg: #33213a;
 }
 
 * { box-sizing: border-box; }
@@ -79,7 +105,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 36px 24px 80px; }
   max-width: 1120px; margin: 0 auto; padding: 12px 24px;
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 28px;
 }
-.topbar nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; }
+.topbar nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .topbar nav > a:not(.button) { color: var(--muted); }
 .topbar nav > a:not(.button):hover { color: var(--ink); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 600; font-size: 18px; letter-spacing: -0.01em; }
@@ -274,6 +300,7 @@ pre { background: var(--subtle); border: 1px solid var(--line); padding: 12px; b
 .segmented button { min-height: 38px; background: transparent; color: var(--muted); border: 0; border-radius: 999px; padding: 0 14px; font-size: 13px; }
 .segmented button:hover { color: var(--ink); filter: none; }
 .segmented button.on { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08); }
+.theme-toggle { min-width: 44px; padding: 0; border-radius: 999px; }
 .wallet-pill {
   display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 999px;
   background: var(--subtle); color: var(--ink); font-family: var(--font-mono), monospace; font-size: 13px;
@@ -357,5 +384,7 @@ button.option[aria-pressed='true'] { border: 2px solid var(--accent); background
 @media (max-width: 640px) {
   main { padding: 24px 16px 64px; }
   .topbar-inner { padding: 12px 16px; }
+  /* The header wraps to several rows on a phone: let it scroll away instead of covering the page. */
+  .topbar { position: static; }
   h1 { font-size: 32px; }
 }

@@ -2,8 +2,12 @@ import type { Metadata } from 'next'
 import { Geist, Geist_Mono, Newsreader } from 'next/font/google'
 import Link from 'next/link'
 import { Logo } from '@/components/ui'
+import ThemeToggle from '@/components/ThemeToggle'
 import WalletButton from '@/components/WalletButton'
 import './globals.css'
+
+// Applies a saved light/dark choice before first paint (see ThemeToggle).
+const THEME_SCRIPT = `try{var t=localStorage.getItem('lexdiff:theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}`
 
 const sans = Geist({ variable: '--font-sans', subsets: ['latin'] })
 const mono = Geist_Mono({ variable: '--font-mono', subsets: ['latin'] })
@@ -16,7 +20,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`}>
+    // The theme script sets data-theme before React hydrates, so the attribute may differ from the server HTML.
+    <html lang="en" className={`${sans.variable} ${mono.variable} ${serif.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>
         <header className="topbar">
           <div className="topbar-inner">
@@ -28,9 +36,9 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
             </Link>
             <nav aria-label="Main">
               <Link href="/">My agreements</Link>
-              <Link href="/verify">Verify a record</Link>
               <Link href="/new" className="button">New agreement</Link>
               <WalletButton />
+              <ThemeToggle />
             </nav>
           </div>
         </header>

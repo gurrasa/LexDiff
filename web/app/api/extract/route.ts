@@ -52,10 +52,10 @@ export async function POST(request: Request) {
       return Response.json({ error: 'ANTHROPIC_API_KEY is missing or invalid.' }, { status: 500 })
     }
     if (error instanceof Anthropic.RateLimitError) {
-      return Response.json({ error: 'Rate limited by the Claude API, try again shortly.' }, { status: 429 })
+      return Response.json({ error: 'The AI service is busy, try again shortly.' }, { status: 429 })
     }
     if (error instanceof Anthropic.APIError) {
-      return Response.json({ error: `Claude API error: ${error.message}` }, { status: 502 })
+      return Response.json({ error: `AI service error: ${error.message}` }, { status: 502 })
     }
     // No key configured: the SDK throws a plain Error before any request is made.
     if (!process.env.ANTHROPIC_API_KEY?.trim()) {

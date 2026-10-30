@@ -236,7 +236,7 @@ export default function Home() {
                       <Badge tone="info">Waiting for your signature</Badge>
                     </div>
                     <p style={{ margin: 0 }}>
-                      Review the agreement and the terms Claude extracted, then sign as the {p.role === 'reviewer' ? 'lawyer' : 'client'}.
+                      Review the agreement and the terms the AI extracted, then sign as the {p.role === 'reviewer' ? 'lawyer' : 'client'}.
                       Nothing is on-chain until both of you sign.
                     </p>
                     <div className="foot">

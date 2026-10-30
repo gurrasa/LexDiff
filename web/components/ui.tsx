@@ -8,11 +8,11 @@ import type { Shown } from '@/lib/plain'
 export function Logo({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={Math.round(size * 1.1)} viewBox="0 0 80 88" aria-hidden="true">
-      <path d="M10 4 H50 L70 24 V84 H10 Z" fill="#FFFFFF" stroke="#17191E" strokeWidth="5" strokeLinejoin="round" />
-      <path d="M50 4 V24 H70" fill="none" stroke="#17191E" strokeWidth="5" strokeLinejoin="round" />
-      <rect x="20" y="36" width="36" height="7" rx="3.5" fill="#17191E" />
-      <rect x="30" y="52" width="40" height="7" rx="3.5" fill="#E8622C" />
-      <rect x="20" y="68" width="26" height="7" rx="3.5" fill="#17191E" />
+      <path d="M10 4 H50 L70 24 V84 H10 Z" fill="var(--panel)" stroke="var(--ink)" strokeWidth="5" strokeLinejoin="round" />
+      <path d="M50 4 V24 H70" fill="none" stroke="var(--ink)" strokeWidth="5" strokeLinejoin="round" />
+      <rect x="20" y="36" width="36" height="7" rx="3.5" fill="var(--ink)" />
+      <rect x="30" y="52" width="40" height="7" rx="3.5" fill="var(--brand)" />
+      <rect x="20" y="68" width="26" height="7" rx="3.5" fill="var(--ink)" />
     </svg>
   )
 }
